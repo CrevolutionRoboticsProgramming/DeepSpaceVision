@@ -14,7 +14,7 @@ private:
 
 	io_service service;
 	ip::udp::socket socket{ service };
-	ip::udp::endpoint remote_endpoint;
+	ip::udp::endpoint receive_endpoint, send_endpoint;
 	boost::system::error_code error;
 
 	static const int bufferSize{ 128 };

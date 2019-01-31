@@ -4,8 +4,9 @@ UDPHandler::UDPHandler(std::string ip, int port)
 	: ip{ip}, port{port}
 {
 	socket.open(ip::udp::v4());
-	remote_endpoint = ip::udp::endpoint(ip::address::from_string(ip), port);
-	socket.bind(remote_endpoint, error);
+	receive_endpoint = ip::udp::endpoint(ip::udp::v4(), 9001);
+	send_endpoint = ip::udp::endpoint(ip::address::from_string(ip), 9000);
+	socket.bind(receive_endpoint, error);
 	service.run(error);
 
 	receiveThread = std::thread(&UDPHandler::receive, this);
@@ -14,7 +15,7 @@ UDPHandler::UDPHandler(std::string ip, int port)
 void UDPHandler::send(std::string message)
 {
 	//socket.send(buffer(message.c_str(), bufferSize), 0, error);
-	socket.send_to(buffer(message.c_str(), bufferSize), remote_endpoint, 0, error);
+	socket.send_to(buffer(message.c_str(), bufferSize), send_endpoint, 0, error);
 }
 
 void UDPHandler::receive()

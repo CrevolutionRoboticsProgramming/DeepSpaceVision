@@ -71,11 +71,11 @@ int main()
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
 	//All the UDP stuff on this end works fine. It does on the other end, too. ???????????????
-	UDPHandler udpHandler{"10.0.0.116", 9000};
+	UDPHandler udpHandler{"10.0.0.214", 9000};
 
 	while(true)
 	{
-		udpHandler.send("test");
+		udpHandler.send("apple");
 		std::cout << udpHandler.getMessage() << '\n';
 	}
 
