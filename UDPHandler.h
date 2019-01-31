@@ -10,7 +10,7 @@ using namespace boost::asio;
 class UDPHandler {
 private:
 	std::string ip;
-	int port;
+	int sendPort, receivePort;
 
 	io_service service;
 	ip::udp::socket socket{ service };
@@ -25,10 +25,11 @@ private:
 	void receive();
 
 public:
-	UDPHandler(std::string ip, int port);
+	UDPHandler(std::string ip, int sendPort, int receivePort);
 	void send(std::string message);
 	void close();
 	std::string getMessage();
 	std::string getIP();
-	int getPort();
+	int getSendPort();
+	int getReceivePort();
 };

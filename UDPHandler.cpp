@@ -1,11 +1,11 @@
 #include "UDPHandler.h"
 
-UDPHandler::UDPHandler(std::string ip, int port)
-	: ip{ip}, port{port}
+UDPHandler::UDPHandler(std::string ip, int sendPort, int receivePort)
+	: ip{ip}, sendPort{sendPort}
 {
-	socket.open(ip::udp::v4());
-	receive_endpoint = ip::udp::endpoint(ip::udp::v4(), 9001);
-	send_endpoint = ip::udp::endpoint(ip::address::from_string(ip), 9000);
+	socket.open(ip::udp::v4(), error);
+	send_endpoint = ip::udp::endpoint(ip::address::from_string(ip), sendPort);
+	receive_endpoint = ip::udp::endpoint(ip::udp::v4(), receivePort);
 	socket.bind(receive_endpoint, error);
 	service.run(error);
 
@@ -41,7 +41,12 @@ std::string UDPHandler::getIP()
 	return ip;
 }
 
-int UDPHandler::getPort()
+int UDPHandler::getSendPort()
 {
-	return port;
+	return sendPort;
+}
+
+int UDPHandler::getReceivePort()
+{
+	return receivePort;
 }
