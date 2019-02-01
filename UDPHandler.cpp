@@ -37,6 +37,11 @@ std::string UDPHandler::getMessage()
 	return std::string(receivedMessage);
 }
 
+void UDPHandler::clearMessage()
+{
+	std::fill_n(receivedMessage, bufferSize, ' ');
+}
+
 std::string UDPHandler::getIP()
 {
 	return ip;

@@ -4,7 +4,6 @@
 #include <vector>
 #include <iostream>
 #include <thread>
-#include <chrono>
 
 using namespace boost::asio;
 
@@ -30,6 +29,7 @@ public:
 	void send(std::string message);
 	void close();
 	std::string getMessage();
+	void clearMessage();
 	std::string getIP();
 	int getSendPort();
 	int getReceivePort();

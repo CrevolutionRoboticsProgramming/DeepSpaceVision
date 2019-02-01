@@ -28,6 +28,38 @@ int bitrate{4000000};
 std::string videoHost{"10.0.0.178"}; //"10.28.51.2"};
 int videoPort{9001};
 
+void actuallySeeFlash()
+{
+	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
+	system("v4l2-ctl -d /dev/video0 \
+		--set-ctrl brightness=150 \
+		--set-ctrl contrast=25 \
+		--set-ctrl saturation=30 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=50 \
+		--set-ctrl power_line_frequency=2 \
+		--set-ctrl sharpness=50 \
+		--set-ctrl backlight_compensation=0 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=50");
+}
+
+void detectionFlash()
+{
+	//Flashes the camera with optimal settings for identifying the targets
+	system("v4l2-ctl -d /dev/video0 \
+		--set-ctrl brightness=100 \
+		--set-ctrl contrast=0 \
+		--set-ctrl saturation=100 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=9000 \
+		--set-ctrl power_line_frequency=2 \
+		--set-ctrl sharpness=24 \
+		--set-ctrl backlight_compensation=0 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=5");
+}
+
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
 {
 	cv::imshow("Base Image", frame);
@@ -70,14 +102,7 @@ int main()
 
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
-	//We can receive stuff, but not send it. We can send things to ourselves and the other program can receive things it sent to itself. ????????????????
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
-
-	while(true)
-	{
-		udpHandler.send("data");
-		std::cout << udpHandler.getMessage() << '\n';
-	}
 
 	CvCapture_GStreamer camera;
 
@@ -98,55 +123,20 @@ int main()
 	//Tells the camera to start reading from the split pipeline
 	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
-	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
-	system("v4l2-ctl -d /dev/video1 \
-		--set-ctrl brightness=150 \
-		--set-ctrl contrast=25 \
-		--set-ctrl saturation=30 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=50 \
-		--set-ctrl power_line_frequency=2 \
-		--set-ctrl sharpness=50 \
-		--set-ctrl backlight_compensation=0 \
-		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=50");
+	actuallySeeFlash();
 
 	while (true)
 	{
-		//std::cout << "Received " << udpHandler.getMessage() << '\n';
-
 		if (udpHandler.getMessage() == "ENABLE")
 		{
-			//Flashes the camera with optimal settings for identifying the targets
-			system("v4l2-ctl -d /dev/video1 \
-				--set-ctrl brightness=100 \
-				--set-ctrl contrast=0 \
-				--set-ctrl saturation=100 \
-				--set-ctrl white_balance_temperature_auto=0 \
-				--set-ctrl white_balance_temperature=9000 \
-				--set-ctrl power_line_frequency=2 \
-				--set-ctrl sharpness=24 \
-				--set-ctrl backlight_compensation=0 \
-				--set-ctrl exposure_auto=1 \
-				--set-ctrl exposure_absolute=5");
-
+			detectionFlash();
+			udpHandler.clearMessage();
 			viewingMode = false;
 		}
 		else if (udpHandler.getMessage() == "DISABLE")
 		{
-			//Re-flashes the camera with the optimal settings for seeing what's going on
-			system("v4l2-ctl -d /dev/video1 \
-				--set-ctrl brightness=150 \
-				--set-ctrl contrast=25 \
-				--set-ctrl saturation=30 \
-				--set-ctrl white_balance_temperature_auto=0 \
-				--set-ctrl white_balance_temperature=50 \
-				--set-ctrl power_line_frequency=2 \
-				--set-ctrl sharpness=50 \
-				--set-ctrl backlight_compensation=0 \
-				--set-ctrl exposure_auto=1 \
-				--set-ctrl exposure_absolute=50");
-
+			actuallySeeFlash();
+			udpHandler.clearMessage();
 			viewingMode = true;
 		}
 
