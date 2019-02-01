@@ -18,14 +18,14 @@ int minArea{150},
 
 int videoSource{1};
 
-std::string udpHost{"10.0.0.214"}; //"10.28.51.2"};
-int udpSendPort{9000}, udpReceivePort{9002};
+std::string udpHost{"10.0.0.178"}; //"10.28.51.2"};
+int udpSendPort{9000}, udpReceivePort{9001};
 
 std::string videoFormat{"I420"};
 int width{1280}, height{720};
 int framerate{30};
 int bitrate{4000000};
-std::string videoHost{"10.0.0.214"}; //"10.28.51.2"};
+std::string videoHost{"10.0.0.178"}; //"10.28.51.2"};
 int videoPort{9001};
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
@@ -70,13 +70,13 @@ int main()
 
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
-	//All the UDP stuff on this end works fine. It does on the other end, too. ???????????????
-	UDPHandler udpHandler{udpHost, 9000, 9001};
+	//We can receive stuff, but not send it. We can send things to ourselves and the other program can receive things it sent to itself. ????????????????
+	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
 
 	while(true)
 	{
-		udpHandler.send("apple");
-		//std::cout << udpHandler.getMessage() << '\n';
+		udpHandler.send("data");
+		std::cout << udpHandler.getMessage() << '\n';
 	}
 
 	CvCapture_GStreamer camera;

@@ -15,7 +15,8 @@ UDPHandler::UDPHandler(std::string ip, int sendPort, int receivePort)
 void UDPHandler::send(std::string message)
 {
 	//socket.send(buffer(message.c_str(), bufferSize), 0, error);
-	socket.send_to(buffer(message.c_str(), bufferSize), send_endpoint, 0, error);
+	socket.send_to(buffer(message, bufferSize), send_endpoint, 0, error);
+	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
 
 void UDPHandler::receive()
