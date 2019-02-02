@@ -6,8 +6,8 @@
 #include <array>
 #include <unistd.h>
 
-cv::Scalar hsvLow{55, 67, 147}, //0, 0, 230}, //hsvLow{ 70, 120, 90 },
-	hsvHigh{83, 199, 206};		//180, 35, 255};	//hsvHigh{ 100, 255, 255 };
+cv::Scalar hsvLow{36, 64, 105}, //0, 0, 230}, //hsvLow{ 70, 120, 90 },
+	hsvHigh{83, 255, 255};		//180, 35, 255};	//hsvHigh{ 100, 255, 255 };
 
 double fovAngle{41.86};
 
@@ -18,20 +18,20 @@ int minArea{150},
 
 int videoSource{1};
 
-std::string udpHost{"10.0.0.178"}; //"10.28.51.2"};
+std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
 std::string videoFormat{"I420"};
-int width{1280}, height{720};
+int width{640}, height{480};
 int framerate{30};
-int bitrate{4000000};
-std::string videoHost{"10.0.0.178"}; //"10.28.51.2"};
+int bitrate{60000};
+std::string videoHost{"10.28.51.210"};
 int videoPort{9001};
 
 void actuallySeeFlash()
 {
 	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
-	system("v4l2-ctl -d /dev/video0 \
+	system("v4l2-ctl -d /dev/video1 \
 		--set-ctrl brightness=150 \
 		--set-ctrl contrast=25 \
 		--set-ctrl saturation=30 \
@@ -39,7 +39,6 @@ void actuallySeeFlash()
 		--set-ctrl white_balance_temperature=50 \
 		--set-ctrl power_line_frequency=2 \
 		--set-ctrl sharpness=50 \
-		--set-ctrl backlight_compensation=0 \
 		--set-ctrl exposure_auto=1 \
 		--set-ctrl exposure_absolute=50");
 }
@@ -47,7 +46,7 @@ void actuallySeeFlash()
 void detectionFlash()
 {
 	//Flashes the camera with optimal settings for identifying the targets
-	system("v4l2-ctl -d /dev/video0 \
+	system("v4l2-ctl -d /dev/video1 \
 		--set-ctrl brightness=100 \
 		--set-ctrl contrast=0 \
 		--set-ctrl saturation=100 \
@@ -55,7 +54,6 @@ void detectionFlash()
 		--set-ctrl white_balance_temperature=9000 \
 		--set-ctrl power_line_frequency=2 \
 		--set-ctrl sharpness=24 \
-		--set-ctrl backlight_compensation=0 \
 		--set-ctrl exposure_auto=1 \
 		--set-ctrl exposure_absolute=5");
 }
@@ -124,6 +122,11 @@ int main()
 	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
 	actuallySeeFlash();
+
+	while(true)
+	{
+		std::cout << udpHandler.getMessage() << '\n';
+	}
 
 	while (true)
 	{
