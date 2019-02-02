@@ -17,9 +17,9 @@ private:
 	ip::udp::endpoint receive_endpoint, send_endpoint;
 	boost::system::error_code error;
 
-	static const int bufferSize{ 128 };
+	static const int bufferSize{ 8 };
 
-	char receivedMessage[bufferSize];
+	std::string receivedMessage;
 	std::thread receiveThread;
 
 	void receive();

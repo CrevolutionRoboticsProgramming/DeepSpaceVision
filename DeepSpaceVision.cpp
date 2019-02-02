@@ -6,8 +6,8 @@
 #include <array>
 #include <unistd.h>
 
-cv::Scalar hsvLow{36, 64, 105}, //0, 0, 230}, //hsvLow{ 70, 120, 90 },
-	hsvHigh{83, 255, 255};		//180, 35, 255};	//hsvHigh{ 100, 255, 255 };
+cv::Scalar hsvLow{36, 64, 105},
+	hsvHigh{83, 255, 255};
 
 double fovAngle{41.86};
 
@@ -18,14 +18,14 @@ int minArea{150},
 
 int videoSource{1};
 
-std::string udpHost{"10.28.51.2"};
+std::string udpHost{"10.0.0.214"};//"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
 std::string videoFormat{"I420"};
 int width{640}, height{480};
 int framerate{30};
 int bitrate{60000};
-std::string videoHost{"10.28.51.210"};
+std::string videoHost{"10.0.0.214"};//"10.28.51.210"};
 int videoPort{9001};
 
 void actuallySeeFlash()
@@ -123,24 +123,23 @@ int main()
 
 	actuallySeeFlash();
 
-	while(true)
-	{
-		std::cout << udpHandler.getMessage() << '\n';
-	}
-
 	while (true)
 	{
-		if (udpHandler.getMessage() == "ENABLE")
+		//The UDP receiver expects seven chars but gets six so it adds an extra E
+		if (udpHandler.getMessage() == "ENABLEE"
+			|| udpHandler.getMessage() == "ENABLE")
 		{
 			detectionFlash();
 			udpHandler.clearMessage();
 			viewingMode = false;
+			std::cout << "Enabled\n";
 		}
 		else if (udpHandler.getMessage() == "DISABLE")
 		{
 			actuallySeeFlash();
 			udpHandler.clearMessage();
 			viewingMode = true;
+			std::cout << "Disabled\n";
 		}
 
 		//Gets the next frame from the camera
@@ -154,20 +153,6 @@ int main()
 		{
 			IplImage *img = camera.retrieveFrame(0);
 			frame = cv::cvarrToMat(img);
-
-			/*
-			cv::createTrackbar("contrast", "Frame", &contrast, 100, trackbarUpdatePlaceholder);
-			cv::createTrackbar("brightness", "Frame", &brightness, 100, trackbarUpdatePlaceholder);
-			cv::createTrackbar("saturation", "Frame", &saturation, 100, trackbarUpdatePlaceholder);
-
-			//Contrast and brightness are the last two parameters
-			frame.convertTo(frame, -1, contrast, brightness);
-
-			//Saturation is the last parameter
-			frame.convertTo(frame, CV_8UC1, 1, saturation);
-
-			cv::imshow("Frame", frame);
-			*/
 
 			std::vector<std::vector<cv::Point>> contoursRaw;
 			extractContours(contoursRaw, frame, hsvLow, hsvHigh, morphElement);

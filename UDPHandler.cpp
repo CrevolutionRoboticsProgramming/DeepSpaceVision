@@ -14,16 +14,16 @@ UDPHandler::UDPHandler(std::string ip, int sendPort, int receivePort)
 
 void UDPHandler::send(std::string message)
 {
-	//socket.send(buffer(message.c_str(), bufferSize), 0, error);
 	socket.send_to(buffer(message, bufferSize), send_endpoint, 0, error);
-	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 }
 
 void UDPHandler::receive()
 {
 	while (true)
 	{
-		socket.receive(buffer(receivedMessage, bufferSize), 0, error);
+		char buf[bufferSize];
+		socket.receive(buffer(buf, bufferSize), 0, error);
+		receivedMessage = std::string(buf);
 	}
 }
 
@@ -39,7 +39,7 @@ std::string UDPHandler::getMessage()
 
 void UDPHandler::clearMessage()
 {
-	std::fill_n(receivedMessage, bufferSize, ' ');
+	receivedMessage.clear();
 }
 
 std::string UDPHandler::getIP()
