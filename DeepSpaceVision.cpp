@@ -6,7 +6,7 @@
 #include <array>
 #include <unistd.h>
 
-cv::Scalar hsvLow{36, 200, 105},
+cv::Scalar hsvLow{36, 64, 105},
 	hsvHigh{83, 255, 255};
 
 double fovAngle{20.93}; //The one we have now is for the smaller one //41.86};
@@ -18,14 +18,14 @@ int minArea{60},
 
 int videoSource{1};
 
-std::string udpHost{"10.28.51.2"};
+std::string udpHost{"10.0.0.214"};//"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
 std::string videoFormat{"I420"};
 int width{640}, height{480};
 int framerate{30};
 int bitrate{60000};
-std::string videoHost{"10.28.51.210"};
+std::string videoHost{"10.0.0.214"};//"10.28.51.210"};
 int videoPort{9001};
 
 void actuallySeeFlash()
@@ -133,12 +133,14 @@ int main()
 			detectionFlash();
 			udpHandler.clearMessage();
 			viewingMode = false;
+			std::cout << "Enabled\n";
 		}
 		else if (udpHandler.getMessage() == "DISABLE")
 		{
 			actuallySeeFlash();
 			udpHandler.clearMessage();
 			viewingMode = true;
+			std::cout << "Disabled\n";
 		}
 
 		//Gets the next frame from the camera
