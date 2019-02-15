@@ -6,26 +6,26 @@
 #include <array>
 #include <unistd.h>
 
-cv::Scalar hsvLow{36, 64, 105},
+cv::Scalar hsvLow{36, 200, 105},
 	hsvHigh{83, 255, 255};
 
-double fovAngle{41.86};
+double fovAngle{20.93}; //The one we have now is for the smaller one //41.86};
 
 int contourPolygonAccuracy{5};
 
-int minArea{150},
-	minRotation{60};
+int minArea{60},
+	minRotation{45};
 
 int videoSource{1};
 
-std::string udpHost{"10.0.0.214"};//"10.28.51.2"};
+std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
 std::string videoFormat{"I420"};
 int width{640}, height{480};
 int framerate{30};
 int bitrate{60000};
-std::string videoHost{"10.0.0.214"};//"10.28.51.210"};
+std::string videoHost{"10.28.51.210"};
 int videoPort{9001};
 
 void actuallySeeFlash()
@@ -81,6 +81,8 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	//Applies the Canny edge detection algorithm to extract edges
 	cv::Canny(frame, frame, 0, 0);
 
+	cv::imshow("Canny", frame);
+
 	//Finds the contours in the image and stores them in a vector of vectors of cv::Points (each vector of cv::Points represents the curve of the contour)
 	//CV_RETR_EXTERNAL specifies to only detect contours on the edges of particles
 	//CV_CHAIN_APPROX_SIMPLE compresses the points of the contour to only include their end points
@@ -92,7 +94,6 @@ int main()
 	bool viewingMode{true};
 
 	cv::Mat frame;
-	cv::Mat originalImage;
 
 	double distanceTo{0},
 		verticalAngleError{0},
@@ -109,14 +110,14 @@ int main()
 	//other is used for vision processing.
 	char buffer[500];
 	sprintf(buffer,
-			"v4l2src device=/dev/video%d ! "
-			"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
-			"tee name=split "
-			"split. ! queue ! videoconvert ! omxh264enc control-rate=2 bitrate=%d ! "
-			"video/x-h264, stream-format=(string)byte-stream ! h264parse ! "
-			"rtph264pay mtu=1400 ! udpsink host=%s port=%d sync=false async=false "
-			"split. ! queue ! autovideoconvert ! appsink",
-			videoSource, width, height, framerate, bitrate, videoHost.c_str(), videoPort);
+		"v4l2src device=/dev/video%d ! "
+		"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+		"tee name=split "
+		"split. ! queue ! videoconvert ! omxh264enc control-rate=2 bitrate=%d ! "
+		"video/x-h264, stream-format=(string)byte-stream ! h264parse ! "
+		"rtph264pay mtu=1400 ! udpsink host=%s port=%d sync=false async=false "
+		"split. ! queue ! autovideoconvert ! appsink",
+		videoSource, width, height, framerate, bitrate, videoHost.c_str(), videoPort);
 
 	//Tells the camera to start reading from the split pipeline
 	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
@@ -132,14 +133,12 @@ int main()
 			detectionFlash();
 			udpHandler.clearMessage();
 			viewingMode = false;
-			std::cout << "Enabled\n";
 		}
 		else if (udpHandler.getMessage() == "DISABLE")
 		{
 			actuallySeeFlash();
 			udpHandler.clearMessage();
 			viewingMode = true;
-			std::cout << "Disabled\n";
 		}
 
 		//Gets the next frame from the camera

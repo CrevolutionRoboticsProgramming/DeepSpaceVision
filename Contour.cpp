@@ -1,5 +1,7 @@
 #include "Contour.h"
 
+#include <iostream>
+
 Contour::Contour()
 {
 }
