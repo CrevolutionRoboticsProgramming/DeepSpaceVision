@@ -17,16 +17,14 @@ int minArea{60},
 	minRotation{45};
 
 int processingVideoSource{1},
-	viewingVideoSource{2};
+	viewingVideoSource{0};
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
-std::string videoFormat{"I420"};
 int width{640}, height{480};
 int framerate{30};
-int bitrate{60000};
-std::string videoHost{"10.28.51.210"};
+std::string videoHost{"10.0.0.178"};//"10.28.51.210"};
 int videoPort{9001};
 
 void transmitVideo()
@@ -34,12 +32,10 @@ void transmitVideo()
 	char buffer[500];
 	sprintf(buffer,
 		"gst-launch-1.0 -v v4l2src device=/dev/video%d ! "
-		"video/x-raw,format=I420,width=%d,height=%d,framerate=%d/1 ! "
-		"queue ! videoconvert ! omxh264enc control-rate=2 bitrate=%d ! "
-		"video/x-h264, stream-format=byte-stream ! h264parse ! "
-		"rtph264pay mtu=1400 ! udpsink host=%s port=%d sync=false async=false",
-		viewingVideoSource, width, height, framerate, bitrate, videoHost.c_str(), videoPort);
-		
+		"image/jpeg,width=%d,height=%d,framerate=%d/1 ! "
+		"rtpjpegpay ! "
+		"udpsink host=%s port=%d sync=false async=false",
+		viewingVideoSource, width, height, framerate, videoHost.c_str(), videoPort);		
 	system(buffer);
 }
 
@@ -75,7 +71,10 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 }
 
 int main()
-{
+{	
+	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
+	std::thread transmitVideoThread{transmitVideo};
+
 	cv::Mat frame;
 
 	double distanceTo{0},
@@ -88,8 +87,11 @@ int main()
 
 	CvCapture_GStreamer camera;
 	
+	char buffer[500];
+
 	//Flashes the camera with optimal settings for identifying the targets
-	system("v4l2-ctl -d /dev/video1 \
+	sprintf(buffer,
+		"v4l2-ctl -d /dev/video%d \
 		--set-ctrl brightness=100 \
 		--set-ctrl contrast=0 \
 		--set-ctrl saturation=100 \
@@ -98,12 +100,13 @@ int main()
 		--set-ctrl power_line_frequency=2 \
 		--set-ctrl sharpness=24 \
 		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=5");
+		--set-ctrl exposure_absolute=5",
+		processingVideoSource);
+	system(buffer);
 
 	//Creates an array of characters (acts like a string) to hold the split
 	//gstreamer pipeline. One half is sent to the Driver Station and the
 	//other is used for vision processing.
-	char buffer[500];
 	sprintf(buffer,
 		"v4l2src device=/dev/video%d ! "
 		"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
@@ -112,9 +115,6 @@ int main()
 		
 	//Tells the camera to start reading from the pipeline to process video
 	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
-	
-	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-	std::thread transmitVideoThread{transmitVideo};
 
 	while (true)
 	{
@@ -124,11 +124,9 @@ int main()
 		{
 			std::cout << "Could not retrieve frame! Please check camera connection. Trying again...\n";
 		}
-		
+
 		IplImage *img = camera.retrieveFrame(0);
 		frame = cv::cvarrToMat(img);
-		
-		cv::imshow("Frame", frame);
 		
 		std::vector<std::vector<cv::Point>> contoursRaw;
 		extractContours(contoursRaw, frame, hsvLow, hsvHigh, morphElement);
