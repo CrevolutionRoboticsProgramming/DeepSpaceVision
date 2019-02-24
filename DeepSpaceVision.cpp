@@ -6,7 +6,7 @@
 #include <array>
 #include <unistd.h>
 
-cv::Scalar hsvLow{36, 64, 105},
+cv::Scalar hsvLow{36, 64, 200},
 	hsvHigh{83, 255, 255};
 
 double fovAngle{40};//20.93}; //The one we have now is for the smaller one //41.86};
@@ -14,17 +14,17 @@ double fovAngle{40};//20.93}; //The one we have now is for the smaller one //41.
 int contourPolygonAccuracy{5};
 
 int minArea{60},
-	minRotation{45};
+	minRotation{30};
 
-int processingVideoSource{1},
-	viewingVideoSource{0};
+int processingVideoSource{0},
+	viewingVideoSource{1};
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{640}, height{480};
-int framerate{30};
-std::string videoHost{"10.0.0.178"};//"10.28.51.210"};
+int framerate{15};
+std::string videoHost{"10.28.51.210"};
 int videoPort{9001};
 
 void transmitVideo()
@@ -58,6 +58,8 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	//Shaves down the bright parts of the image and then expands them to remove small false positives
 	cv::erode(frame, frame, morphElement, cv::Point(-1, -1), 2);
 	cv::dilate(frame, frame, morphElement, cv::Point(-1, -1), 2);
+
+	//cv::imshow("After erosion and dilation", frame);
 
 	//Applies the Canny edge detection algorithm to extract edges
 	cv::Canny(frame, frame, 0, 0);
@@ -102,6 +104,21 @@ int main()
 		--set-ctrl exposure_auto=1 \
 		--set-ctrl exposure_absolute=5",
 		processingVideoSource);
+	system(buffer);
+
+	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
+	sprintf(buffer, 
+		"v4l2-ctl -d /dev/video1 \
+		--set-ctrl brightness=100 \
+		--set-ctrl contrast=25 \
+		--set-ctrl saturation=30 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=50 \
+		--set-ctrl power_line_frequency=2 \
+		--set-ctrl sharpness=50 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=50",
+		viewingVideoSource);
 	system(buffer);
 
 	//Creates an array of characters (acts like a string) to hold the split
@@ -195,6 +212,8 @@ int main()
 					//distanceTo = (whatever calculation);
 					horizontalAngleError = -((frame.cols / 2.0) - (origCenterX + ((leastDistantX - origCenterX) / 2))) / frame.cols * fovAngle;
 					verticalAngleError = ((frame.rows / 2.0) - (origCenterY + ((leastDistantY - origCenterY) / 2))) / frame.rows * fovAngle;
+
+					//std::cout << horizontalAngleError << '\n';
 
 					udpHandler.send(std::to_string(horizontalAngleError));
 				}
