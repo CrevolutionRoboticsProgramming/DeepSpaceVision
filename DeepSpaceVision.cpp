@@ -24,7 +24,7 @@ int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{320}, height{240};
 int framerate{15};
-std::string videoHost{"10.28.51.175"};
+std::string videoHost{"192.168.1.119"};//"10.28.51.175"};
 int videoPort{9001};
 
 void transmitVideo()
@@ -33,7 +33,7 @@ void transmitVideo()
 	sprintf(buffer,
 		"v4l2src device=/dev/video%d ! "
 		"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
-		"queue ! autovideoconvert ! appsink",
+		"! queue ! autovideoconvert ! appsink",
 		viewingVideoSource, width, height, framerate);
 	cv::VideoCapture viewingCamera{ std::string{ buffer } };
 	
@@ -42,22 +42,20 @@ void transmitVideo()
 		"image/jpeg,width=%d,height=%d,framerate=%d/1 ! "
 		"rtpjpegpay ! "
 		"udpsink host=%s port=%d sync=false async=false",
-		viewingVideoSource, width, height, framerate, videoHost.c_str(), videoPort);		
-	
-	std::cout << "Before VideoWriter\n";
+		width, height, framerate, videoHost.c_str(), videoPort);
 	
 	cv::VideoWriter videoWriter;
-	videoWriter.open(std::string{ buffer }, 0, 15.0, cv::Size{ width, height }, true);
 	
-	std::cout << "After VideoWriter\n";
+	//				   fourcc, fps, frame size, is in color
+	videoWriter.open(std::string{ buffer }, 0, 15.0, cv::Size{ width, height }, true);
 	
 	cv::Mat frame;
 	while(true)
 	{
-		std::cout << "Beginning of loop\n";
+		std::cout << "\n\n\n--- Loop ---\n\n\n";
+		// Getting an error about pushing the buffer to the pipline here. The frame is being filled but it won't work
 		viewingCamera.read(frame);
 		videoWriter << frame;
-		std::cout << "End of loop\n";
 	}
 }
 
@@ -143,7 +141,6 @@ int main()
 	
 	CvCapture_GStreamer processingCamera;
 
-	
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
 	sprintf(buffer,
@@ -157,6 +154,8 @@ int main()
 
 	while (true)
 	{
+		std::cout << "\n\n\n--- In main loop ---\n\n\n";
+		
 		//Gets the next frame from the camera
 		//This returns true if it was successful
 		while (!processingCamera.grabFrame())
