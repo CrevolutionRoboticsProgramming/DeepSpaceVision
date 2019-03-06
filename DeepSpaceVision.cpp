@@ -6,7 +6,7 @@
 #include <array>
 #include <unistd.h>
 
-cv::Scalar hsvLow{36, 64, 105},
+cv::Scalar hsvLow{36, 64, 200},
 	hsvHigh{83, 255, 255};
 
 double fovAngle{40};//20.93}; //The one we have now is for the smaller one //41.86};
@@ -14,29 +14,51 @@ double fovAngle{40};//20.93}; //The one we have now is for the smaller one //41.
 int contourPolygonAccuracy{5};
 
 int minArea{60},
-	minRotation{45};
+	minRotation{30};
 
-int processingVideoSource{1},
-	viewingVideoSource{0};
+int processingVideoSource{0},
+	viewingVideoSource{1};
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
-int width{640}, height{480};
-int framerate{30};
-std::string videoHost{"10.0.0.178"};//"10.28.51.210"};
+int width{320}, height{240};
+int framerate{15};
+std::string videoHost{"10.28.51.175"};
 int videoPort{9001};
 
 void transmitVideo()
 {
 	char buffer[500];
 	sprintf(buffer,
-		"gst-launch-1.0 -v v4l2src device=/dev/video%d ! "
+		"v4l2src device=/dev/video%d ! "
+		"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+		"queue ! autovideoconvert ! appsink",
+		viewingVideoSource, width, height, framerate);
+	cv::VideoCapture viewingCamera{ std::string{ buffer } };
+	
+	sprintf(buffer,
+		"appsrc ! videoconvert ! "
 		"image/jpeg,width=%d,height=%d,framerate=%d/1 ! "
 		"rtpjpegpay ! "
 		"udpsink host=%s port=%d sync=false async=false",
 		viewingVideoSource, width, height, framerate, videoHost.c_str(), videoPort);		
-	system(buffer);
+	
+	std::cout << "Before VideoWriter\n";
+	
+	cv::VideoWriter videoWriter;
+	videoWriter.open(std::string{ buffer }, 0, 15.0, cv::Size{ width, height }, true);
+	
+	std::cout << "After VideoWriter\n";
+	
+	cv::Mat frame;
+	while(true)
+	{
+		std::cout << "Beginning of loop\n";
+		viewingCamera.read(frame);
+		videoWriter << frame;
+		std::cout << "End of loop\n";
+	}
 }
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
@@ -58,6 +80,8 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	//Shaves down the bright parts of the image and then expands them to remove small false positives
 	cv::erode(frame, frame, morphElement, cv::Point(-1, -1), 2);
 	cv::dilate(frame, frame, morphElement, cv::Point(-1, -1), 2);
+
+	//cv::imshow("After erosion and dilation", frame);
 
 	//Applies the Canny edge detection algorithm to extract edges
 	cv::Canny(frame, frame, 0, 0);
@@ -84,8 +108,6 @@ int main()
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
-
-	CvCapture_GStreamer camera;
 	
 	char buffer[500];
 
@@ -104,9 +126,26 @@ int main()
 		processingVideoSource);
 	system(buffer);
 
-	//Creates an array of characters (acts like a string) to hold the split
-	//gstreamer pipeline. One half is sent to the Driver Station and the
-	//other is used for vision processing.
+	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
+	sprintf(buffer, 
+		"v4l2-ctl -d /dev/video%d \
+		--set-ctrl brightness=50 \
+		--set-ctrl contrast=25 \
+		--set-ctrl saturation=30 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=50 \
+		--set-ctrl power_line_frequency=2 \
+		--set-ctrl sharpness=50 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=50",
+		viewingVideoSource);
+	system(buffer);
+	
+	CvCapture_GStreamer processingCamera;
+
+	
+	//Creates an array of characters (acts like a string) to hold the
+	//gstreamer pipeline
 	sprintf(buffer,
 		"v4l2src device=/dev/video%d ! "
 		"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
@@ -114,18 +153,18 @@ int main()
 		processingVideoSource, width, height, framerate);
 		
 	//Tells the camera to start reading from the pipeline to process video
-	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
+	processingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
 	while (true)
 	{
 		//Gets the next frame from the camera
 		//This returns true if it was successful
-		while (!camera.grabFrame())
+		while (!processingCamera.grabFrame())
 		{
 			std::cout << "Could not retrieve frame! Please check camera connection. Trying again...\n";
 		}
 
-		IplImage *img = camera.retrieveFrame(0);
+		IplImage *img = processingCamera.retrieveFrame(0);
 		frame = cv::cvarrToMat(img);
 		
 		std::vector<std::vector<cv::Point>> contoursRaw;
@@ -196,6 +235,8 @@ int main()
 					horizontalAngleError = -((frame.cols / 2.0) - (origCenterX + ((leastDistantX - origCenterX) / 2))) / frame.cols * fovAngle;
 					verticalAngleError = ((frame.rows / 2.0) - (origCenterY + ((leastDistantY - origCenterY) / 2))) / frame.rows * fovAngle;
 
+					//std::cout << horizontalAngleError << '\n';
+
 					udpHandler.send(std::to_string(horizontalAngleError));
 				}
 			}
@@ -205,8 +246,6 @@ int main()
 		//Allows us to see the frames we displayed with cv::imshow
 		cv::waitKey(1);
 	}
-
-	camera.close();
 }
 
 /*

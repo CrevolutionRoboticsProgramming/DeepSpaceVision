@@ -20,6 +20,7 @@ bool Contour::isValid(double minArea, double minRotation, int error)
     //If the area of the contour is less than the specified minimum area, delete it
     if (cv::contourArea(contour) < minArea)
     {
+	//std::cout << "Bad area: " << cv::contourArea(contour) << "\n\n";
         return false;
     }
 
@@ -53,6 +54,7 @@ bool Contour::isValid(double minArea, double minRotation, int error)
     //If the angle isn't extreme enough, delete the contour
     if ((angle < 0 && angle > -minRotation) || (angle > 0 && angle < minRotation))
     {
+	//std::cout << "Bad angle: " << angle << "\n\n";
         return false;
     }
 
