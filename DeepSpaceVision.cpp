@@ -9,7 +9,7 @@
 cv::Scalar hsvLow{36, 64, 200},
 	hsvHigh{83, 255, 255};
 
-double fovAngle{40};//20.93}; //The one we have now is for the smaller one //41.86};
+double fovAngle{40}; //20.93}; //The one we have now is for the smaller one //41.86};
 
 int contourPolygonAccuracy{5};
 
@@ -73,7 +73,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 }
 
 int main()
-{	
+{
 	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
 	std::thread transmitVideoThread{transmitVideo};
 
@@ -86,12 +86,14 @@ int main()
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
+
+	CvCapture_GStreamer camera;
 	
 	char buffer[500];
 
 	//Flashes the camera with optimal settings for identifying the targets
 	sprintf(buffer,
-		"v4l2-ctl -d /dev/video%d \
+			"v4l2-ctl -d /dev/video%d \
 		--set-ctrl brightness=100 \
 		--set-ctrl contrast=0 \
 		--set-ctrl saturation=100 \
@@ -101,7 +103,22 @@ int main()
 		--set-ctrl sharpness=24 \
 		--set-ctrl exposure_auto=1 \
 		--set-ctrl exposure_absolute=5",
-		processingVideoSource);
+			processingVideoSource);
+	system(buffer);
+
+	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
+	sprintf(buffer,
+			"v4l2-ctl -d /dev/video%d \
+		--set-ctrl brightness=100 \
+		--set-ctrl contrast=25 \
+		--set-ctrl saturation=30 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=50 \
+		--set-ctrl power_line_frequency=2 \
+		--set-ctrl sharpness=50 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=50",
+			viewingVideoSource);
 	system(buffer);
 
 	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
@@ -124,26 +141,22 @@ int main()
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
 	sprintf(buffer,
-		"v4l2src device=/dev/video%d ! "
-		"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
-		"queue ! autovideoconvert ! appsink",
-		processingVideoSource, width, height, framerate);
-		
+			"v4l2src device=/dev/video%d ! "
+			"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+			"queue ! autovideoconvert ! appsink",
+			processingVideoSource, width, height, framerate);
+
 	//Tells the camera to start reading from the pipeline to process video
 	processingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
+	IplImage *img;
 	while (true)
 	{
-		//Gets the next frame from the camera
-		//This returns true if it was successful
-		while (!processingCamera.grabFrame())
-		{
-			std::cout << "Could not retrieve frame! Please check camera connection. Trying again...\n";
-		}
+		camera.grabFrame();
 
-		IplImage *img = processingCamera.retrieveFrame(0);
+		img = camera.retrieveFrame(0);
 		frame = cv::cvarrToMat(img);
-		
+
 		std::vector<std::vector<cv::Point>> contoursRaw;
 		extractContours(contoursRaw, frame, hsvLow, hsvHigh, morphElement);
 		std::vector<Contour> contours(contoursRaw.size());
@@ -152,7 +165,7 @@ int main()
 			contours.at(i) = Contour(contoursRaw.at(i));
 		}
 
-		//Filters out bad contours and adds the dimensions of the good contours to the above vectors
+		//Filters out bad contours and adds the contour to the vector
 		for (int c{0}; c < contours.size(); ++c)
 		{
 			if (!contours.at(c).isValid(minArea, minRotation, 3))
@@ -162,6 +175,8 @@ int main()
 				continue;
 			}
 		}
+
+		std::vector<std::array<Contour, 2>> pairs{};
 
 		//Least distant contour initialized with -1 so it's not confused for an actual contour and can be tested for not being valid
 		int leastDistantContour{-1};
@@ -200,25 +215,38 @@ int main()
 				//If we found the second contour, calculate its position in relation to us
 				if (leastDistantContour != -1)
 				{
-					//For clarity
-					double origCenterX = contours.at(origContour).rotatedBoundingBox.center.x,
-						   origCenterY = contours.at(origContour).rotatedBoundingBox.center.y;
-					double leastDistantX = contours.at(leastDistantContour).rotatedBoundingBox.center.x,
-						   leastDistantY = contours.at(leastDistantContour).rotatedBoundingBox.center.y;
-
-					//The original contour will always be the left one since that's what we've specified
-					//Calculates and spits out some values for us
-					//distanceTo = (whatever calculation);
-					horizontalAngleError = -((frame.cols / 2.0) - (origCenterX + ((leastDistantX - origCenterX) / 2))) / frame.cols * fovAngle;
-					verticalAngleError = ((frame.rows / 2.0) - (origCenterY + ((leastDistantY - origCenterY) / 2))) / frame.rows * fovAngle;
-
-					//std::cout << horizontalAngleError << '\n';
-
-					udpHandler.send(std::to_string(horizontalAngleError));
+					pairs.push_back(std::array<Contour, 2>{contours.at(origContour), contours.at(leastDistantContour)});
+					break;
 				}
 			}
 		}
-			
+
+		std::array<Contour, 2> closestPair{pairs.back()};
+		for (int p{0}; p < pairs.size() - 1; ++p)
+		{
+			double comparePairCenter{((std::max(pairs.at(p).at(0).rotatedBoundingBox.center.x, pairs.at(p).at(1).rotatedBoundingBox.center.x) - std::min(pairs.at(p).at(0).rotatedBoundingBox.center.x, pairs.at(p).at(1).rotatedBoundingBox.center.x)) / 2) + std::min(pairs.at(p).at(0).rotatedBoundingBox.center.x, pairs.at(p).at(1).rotatedBoundingBox.center.x)};
+			double closestPairCenter{((std::max(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x) - std::min(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x)) / 2) + std::min(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x)};
+
+			if (std::abs(comparePairCenter - (width / 2)) <
+				std::abs(closestPairCenter - (width / 2)))
+			{
+				closestPair = std::array<Contour, 2>{pairs.at(p).at(0), pairs.at(p).at(1)};
+			}
+		}
+
+		//For clarity
+		double centerX{((std::max(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x) - std::min(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x)) / 2) + std::min(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x)};
+		double centerY{((std::max(closestPair.at(0).rotatedBoundingBox.center.y, closestPair.at(1).rotatedBoundingBox.center.y) - std::min(closestPair.at(0).rotatedBoundingBox.center.y, closestPair.at(1).rotatedBoundingBox.center.y)) / 2) + std::min(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.y)};
+
+		//The original contour will always be the left one since that's what we've specified
+		//Calculates and spits out some values for us
+		//distanceTo = (regression function);
+		horizontalAngleError = -((frame.cols / 2.0) - centerX) / frame.cols * fovAngle;
+		verticalAngleError = ((frame.rows / 2.0) - centerY) / frame.rows * fovAngle;
+
+		//std::cout << horizontalAngleError << '\n';
+
+		udpHandler.send(std::to_string(horizontalAngleError));
 
 		//Allows us to see the frames we displayed with cv::imshow
 		cv::waitKey(1);
