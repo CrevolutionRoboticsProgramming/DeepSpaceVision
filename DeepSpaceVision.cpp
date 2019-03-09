@@ -17,7 +17,7 @@ int minArea{60},
 	minRotation{30};
 
 int processingVideoSource{1},
-	viewingVideoSource{2};
+	viewingVideoSource{0};
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
@@ -27,7 +27,7 @@ int framerate{15};
 std::string videoHost{"10.28.51.175"};
 int videoPort{9001};
 
-bool verbose{false};
+bool verbose{true};
 bool showImages{true};
 
 void transmitVideo()
@@ -156,7 +156,7 @@ int main()
 		viewingVideoSource);
 	system(buffer);
 	
-	//CvCapture_GStreamer camera;
+	CvCapture_GStreamer camera;
 
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
@@ -180,16 +180,18 @@ int main()
 	}
 
     //Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-    //std::thread transmitVideoThread{transmitVideo};
+    std::thread transmitVideoThread{transmitVideo};
 
 	IplImage *img;
 	while (true)
 	{
-		//camera.grabFrame();
+		//Allows us to see the frames we will display with cv::imshow
+		cv::waitKey(1);
 
-		//img = camera.retrieveFrame(0);
-		//frame = cv::cvarrToMat(img);
-		frame = cv::imread("CargoStraightDark24in.png");
+		camera.grabFrame();
+
+		img = camera.retrieveFrame(0);
+		frame = cv::cvarrToMat(img);
 
 		if(frame.empty())
 		{
@@ -322,9 +324,6 @@ int main()
 		{
 			std::cout << "--- Sent angle of error to the roboRIO ---\n";
 		}
-
-		//Allows us to see the frames we displayed with cv::imshow
-		cv::waitKey(1);
 	}
 }
 
