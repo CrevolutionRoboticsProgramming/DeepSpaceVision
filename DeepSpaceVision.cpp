@@ -28,6 +28,7 @@ std::string videoHost{"10.28.51.175"};
 int videoPort{9001};
 
 bool verbose{false};
+bool showImages{true};
 
 void transmitVideo()
 {
@@ -48,14 +49,20 @@ void transmitVideo()
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
 {
-	//cv::imshow("Base Image", frame);
+	if(showImages)
+	{
+		cv::imshow("Base Image", frame);
+	}
 
 	cv::cvtColor(frame, frame, cv::COLOR_BGR2HSV);
 
 	//Singles out the pixels that meet the HSV range of the target and displays them
 	cv::inRange(frame, hsvLowThreshold, hsvHighThreshold, frame);
 
-	//cv::imshow("After inRange", frame);
+	if(showImages)
+	{
+		cv::imshow("After inRange", frame);
+	}
 
 	//Applies an open morph to the frame (erosion (dark spaces expand) followed by a dilation (light spaces expand) to remove small particles with a kernel specified by morphElement) and displays it
 	//cv::morphologyEx(frame, frame, cv::MORPH_OPEN, morphElement);
@@ -66,12 +73,18 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	cv::erode(frame, frame, morphElement, cv::Point(-1, -1), 2);
 	cv::dilate(frame, frame, morphElement, cv::Point(-1, -1), 2);
 
-	//cv::imshow("After erosion and dilation", frame);
+	if(showImages)
+	{
+		cv::imshow("After erosion and dilation", frame);
+	}
 
 	//Applies the Canny edge detection algorithm to extract edges
 	cv::Canny(frame, frame, 0, 0);
 
-	//cv::imshow("Canny", frame);
+	if(showImages)
+	{
+		cv::imshow("Canny", frame);
+	}
 
 	//Finds the contours in the image and stores them in a vector of vectors of cv::Points (each vector of cv::Points represents the curve of the contour)
 	//CV_RETR_EXTERNAL specifies to only detect contours on the edges of particles
@@ -143,7 +156,7 @@ int main()
 		viewingVideoSource);
 	system(buffer);
 	
-	CvCapture_GStreamer camera;
+	//CvCapture_GStreamer camera;
 
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
@@ -159,7 +172,7 @@ int main()
 	}
 
 	//Tells the camera to start reading from the pipeline to process video
-	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
+	//camera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
 	if(verbose)
 	{
@@ -167,15 +180,16 @@ int main()
 	}
 
     //Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-    std::thread transmitVideoThread{transmitVideo};
+    //std::thread transmitVideoThread{transmitVideo};
 
 	IplImage *img;
 	while (true)
 	{
-		camera.grabFrame();
+		//camera.grabFrame();
 
-		img = camera.retrieveFrame(0);
-		frame = cv::cvarrToMat(img);
+		//img = camera.retrieveFrame(0);
+		//frame = cv::cvarrToMat(img);
+		frame = cv::imread("CargoStraightDark24in.png");
 
 		if(frame.empty())
 		{
