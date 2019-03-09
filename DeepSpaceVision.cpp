@@ -16,8 +16,8 @@ int contourPolygonAccuracy{5};
 int minArea{60},
 	minRotation{30};
 
-int processingVideoSource{0},
-	viewingVideoSource{1};
+int processingVideoSource{1},
+	viewingVideoSource{2};
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
@@ -27,8 +27,15 @@ int framerate{15};
 std::string videoHost{"10.28.51.175"};
 int videoPort{9001};
 
+bool verbose{false};
+
 void transmitVideo()
 {
+	if(verbose)
+	{
+		std::cout << "--- Transmitting video ---\n";
+	}
+
 	char buffer[500];
 	sprintf(buffer,
 			"gst-launch-1.0 -v v4l2src device=/dev/video%d ! "
@@ -74,8 +81,10 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 
 int main()
 {
-	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-	std::thread transmitVideoThread{transmitVideo};
+	if(verbose)
+	{
+		std::cout << "--- Starting program ---\n";
+	}
 
 	cv::Mat frame;
 
@@ -86,8 +95,6 @@ int main()
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
-
-	CvCapture_GStreamer camera;
 	
 	char buffer[500];
 
@@ -136,7 +143,7 @@ int main()
 		viewingVideoSource);
 	system(buffer);
 	
-	CvCapture_GStreamer processingCamera;
+	CvCapture_GStreamer camera;
 
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
@@ -146,8 +153,21 @@ int main()
 			"queue ! autovideoconvert ! appsink",
 			processingVideoSource, width, height, framerate);
 
+	if(verbose)
+	{
+		std::cout << "--- Initialization complete ---\n";
+	}
+
 	//Tells the camera to start reading from the pipeline to process video
-	processingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
+	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
+
+	if(verbose)
+	{
+		std::cout << "--- Opened camera ---\n";
+	}
+
+    //Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
+    std::thread transmitVideoThread{transmitVideo};
 
 	IplImage *img;
 	while (true)
@@ -157,12 +177,28 @@ int main()
 		img = camera.retrieveFrame(0);
 		frame = cv::cvarrToMat(img);
 
+		if(frame.empty())
+		{
+			std::cout << "Frame is empty\n";
+			exit(-1);
+		}
+
+		if(verbose)
+		{
+			std::cout << "--- Retrieved frame ---\n";
+		}
+
 		std::vector<std::vector<cv::Point>> contoursRaw;
 		extractContours(contoursRaw, frame, hsvLow, hsvHigh, morphElement);
 		std::vector<Contour> contours(contoursRaw.size());
 		for (int i{0}; i < contoursRaw.size(); ++i)
 		{
 			contours.at(i) = Contour(contoursRaw.at(i));
+		}
+
+		if(verbose)
+		{
+			std::cout << "--- Extracted contours ---\n";
 		}
 
 		//Filters out bad contours and adds the contour to the vector
@@ -176,6 +212,11 @@ int main()
 			}
 		}
 
+		if(verbose)
+		{
+			std::cout << "--- Filtered out bad contours ---\n";
+		}
+		
 		std::vector<std::array<Contour, 2>> pairs{};
 
 		//Least distant contour initialized with -1 so it's not confused for an actual contour and can be tested for not being valid
@@ -221,17 +262,32 @@ int main()
 			}
 		}
 
+		if(verbose)
+		{
+			std::cout << "--- Matched contour pairs ---\n";
+		}
+
+		if(pairs.size() == 0)
+		{
+			continue;
+		}
+
 		std::array<Contour, 2> closestPair{pairs.back()};
-		for (int p{0}; p < pairs.size() - 1; ++p)
+		for (int p{0}; p < pairs.size(); ++p)
 		{
 			double comparePairCenter{((std::max(pairs.at(p).at(0).rotatedBoundingBox.center.x, pairs.at(p).at(1).rotatedBoundingBox.center.x) - std::min(pairs.at(p).at(0).rotatedBoundingBox.center.x, pairs.at(p).at(1).rotatedBoundingBox.center.x)) / 2) + std::min(pairs.at(p).at(0).rotatedBoundingBox.center.x, pairs.at(p).at(1).rotatedBoundingBox.center.x)};
 			double closestPairCenter{((std::max(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x) - std::min(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x)) / 2) + std::min(closestPair.at(0).rotatedBoundingBox.center.x, closestPair.at(1).rotatedBoundingBox.center.x)};
 
-			if (std::abs(comparePairCenter - (width / 2)) <
-				std::abs(closestPairCenter - (width / 2)))
+			if (std::abs(comparePairCenter) - (width / 2) <
+				std::abs(closestPairCenter) - (width / 2))
 			{
 				closestPair = std::array<Contour, 2>{pairs.at(p).at(0), pairs.at(p).at(1)};
 			}
+		}
+
+		if(verbose)
+		{
+			std::cout << "--- Found pairs closest to the center ---\n";
 		}
 
 		//For clarity
@@ -247,6 +303,11 @@ int main()
 		//std::cout << horizontalAngleError << '\n';
 
 		udpHandler.send(std::to_string(horizontalAngleError));
+
+		if(verbose)
+		{
+			std::cout << "--- Sent angle of error to the roboRIO ---\n";
+		}
 
 		//Allows us to see the frames we displayed with cv::imshow
 		cv::waitKey(1);
