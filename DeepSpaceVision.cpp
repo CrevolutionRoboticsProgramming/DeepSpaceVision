@@ -24,10 +24,10 @@ int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{320}, height{240};
 int framerate{15};
-std::string videoHost{"10.0.0.214"};//"10.28.51.175"};
+std::string videoHost{"10.28.51.175"};
 int videoPort{9001};
 
-bool verbose{true};
+bool verbose{false};
 bool showImages{false};
 
 void transmitVideo()
@@ -214,8 +214,6 @@ int main()
 
     	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
     	std::thread transmitVideoThread{transmitVideo};
-    	
-    	while(true);
 
 	cv::Mat frame;
 	cv::Mat rotateMat;
