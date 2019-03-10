@@ -16,19 +16,19 @@ int contourPolygonAccuracy{5};
 int minArea{60},
 	minRotation{30};
 
-int processingVideoSource{1},
-	viewingVideoSource{0};
+int processingVideoSource{0},
+	viewingVideoSource{1};
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{320}, height{240};
 int framerate{15};
-std::string videoHost{"10.28.51.175"};
+std::string videoHost{"10.0.0.214"};//"10.28.51.175"};
 int videoPort{9001};
 
 bool verbose{true};
-bool showImages{true};
+bool showImages{false};
 
 void transmitVideo()
 {
@@ -36,15 +36,68 @@ void transmitVideo()
 	{
 		std::cout << "--- Transmitting video ---\n";
 	}
+	
+	CvCapture_GStreamer camera;
 
 	char buffer[500];
+
+	//Creates an array of characters (acts like a string) to hold the
+	//gstreamer pipeline
 	sprintf(buffer,
-			"gst-launch-1.0 -v v4l2src device=/dev/video%d ! "
-			"image/jpeg,width=%d,height=%d,framerate=%d/1 ! "
+			"v4l2src device=/dev/video%d ! "
+			"video/x-raw,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+			"queue ! autovideoconvert ! appsink",
+			viewingVideoSource, width, height, framerate);
+
+	//Tells the camera to start reading from the pipeline to process video
+	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
+
+	if(verbose)
+	{
+		std::cout << "--- Opened viewing camera ---\n";
+	}
+
+	sprintf(buffer,
+			"appsrc ! "
+			"video/x-raw,format=(string)BGR,width=(int)%d,height(int)%d,framerate=(fraction)%d/1 ! "
+			"videoconvert ! video/x-raw,format=(string)I420 ! "
+			"jpegenc ! "
 			"rtpjpegpay ! "
 			"udpsink host=%s port=%d sync=false async=false",
-			viewingVideoSource, width, height, framerate, videoHost.c_str(), videoPort);
-	system(buffer);
+			width, height, framerate, videoHost.c_str(), videoPort);
+			
+	CvVideoWriter_GStreamer videoWriter;
+
+	videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
+
+	if(verbose)
+	{
+		std::cout << "--- Opened video writer ---\n";
+	}
+	
+	cv::Mat apple;
+	apple = cv::imread("apple.png");
+	
+	double alpha = 0.5;
+	double beta = 1.0 - alpha;
+	
+	cv::Mat frame;
+	IplImage *img;
+	while (true)
+	{
+		camera.grabFrame();
+
+		img = camera.retrieveFrame(0);
+		frame = cv::cvarrToMat(img);
+		
+		addWeighted(frame, alpha, apple, beta, 0.0, frame);
+
+		//cv::imshow("Frame", frame);
+		cv::waitKey(1);
+
+ 		IplImage outImage = (IplImage) frame;
+		videoWriter.writeFrame(&outImage);
+	}
 }
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
@@ -99,8 +152,6 @@ int main()
 		std::cout << "--- Starting program ---\n";
 	}
 
-	cv::Mat frame;
-
 	double distanceTo{0},
 		verticalAngleError{0},
 		horizontalAngleError{0};
@@ -117,8 +168,6 @@ int main()
 		--set-ctrl brightness=100 \
 		--set-ctrl contrast=0 \
 		--set-ctrl saturation=100 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=9000 \
 		--set-ctrl power_line_frequency=2 \
 		--set-ctrl sharpness=24 \
 		--set-ctrl exposure_auto=1 \
@@ -132,28 +181,11 @@ int main()
 		--set-ctrl brightness=100 \
 		--set-ctrl contrast=25 \
 		--set-ctrl saturation=30 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=50 \
 		--set-ctrl power_line_frequency=2 \
 		--set-ctrl sharpness=50 \
 		--set-ctrl exposure_auto=1 \
 		--set-ctrl exposure_absolute=50",
 			viewingVideoSource);
-	system(buffer);
-
-	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
-	sprintf(buffer, 
-		"v4l2-ctl -d /dev/video%d \
-		--set-ctrl brightness=50 \
-		--set-ctrl contrast=25 \
-		--set-ctrl saturation=30 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=50 \
-		--set-ctrl power_line_frequency=2 \
-		--set-ctrl sharpness=50 \
-		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=50",
-		viewingVideoSource);
 	system(buffer);
 	
 	CvCapture_GStreamer camera;
@@ -163,6 +195,7 @@ int main()
 	sprintf(buffer,
 			"v4l2src device=/dev/video%d ! "
 			"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+			"videoflip method=clockwise ! "
 			"queue ! autovideoconvert ! appsink",
 			processingVideoSource, width, height, framerate);
 
@@ -172,17 +205,24 @@ int main()
 	}
 
 	//Tells the camera to start reading from the pipeline to process video
-	//camera.open(CV_CAP_GSTREAMER_FILE, buffer);
+	camera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
 	if(verbose)
 	{
 		std::cout << "--- Opened camera ---\n";
 	}
 
-    //Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-    std::thread transmitVideoThread{transmitVideo};
+    	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
+    	std::thread transmitVideoThread{transmitVideo};
+    	
+    	while(true);
 
+	cv::Mat frame;
+	cv::Mat rotateMat;
 	IplImage *img;
+
+	frame.create(height, width, 0);
+	
 	while (true)
 	{
 		//Allows us to see the frames we will display with cv::imshow
