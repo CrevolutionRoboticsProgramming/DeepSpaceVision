@@ -5,6 +5,7 @@
 #include <opencv2/opencv.hpp>
 #include <array>
 #include <unistd.h>
+#include <chrono>
 
 double distanceTo{0},
 		verticalAngleError{0},
@@ -20,8 +21,8 @@ int contourPolygonAccuracy{5};
 int minArea{60},
 	minRotation{30};
 
-int processingVideoSource{0},
-	viewingVideoSource{1};
+int processingVideoSource{1},
+	viewingVideoSource{0};
 
 CvCapture_GStreamer processingCamera;
 CvCapture_GStreamer viewingCamera;
@@ -35,9 +36,9 @@ std::string videoHost{"10.28.51.175"};
 int videoPort{9001};
 
 bool verbose{false};
-bool showImages{true};
+bool showImages{false};
 
-void flashCameras(int processingVideoSource = processingVideoSource, int viewingVideoSource = viewingVideoSource)
+void flashCameras(int processingVideoSource, int viewingVideoSource)
 {
 	char buffer[500];
 
@@ -166,9 +167,6 @@ void transmitVideo()
 			std::cout << "*** Performed operations on viewingCamera feed ***\n";
 		}
 
-		cv::imshow("Frame", frame);
-		//cv::waitKey(1);
-
  		IplImage outImage = (IplImage) frame;
 		videoWriter.writeFrame(&outImage);
 
@@ -234,6 +232,7 @@ int main()
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
+
 	// We flash the cameras with the incorrect settings first to more
 	// reliably flash them with the correct settings (idk why)
 	flashCameras(viewingVideoSource, processingVideoSource);
@@ -255,18 +254,16 @@ int main()
 	std::thread transmitVideoThread{transmitVideo};
 
 	cv::Mat frame;
-	IplImage *img;
-
-	frame.create(height, width, 0);
-
-	int frameCounter{0};
-	
-	for (int frameCounter{0}; ; ++frameCounter)
+	IplImage *img;	
+	for (int frameCounter{0}; frameCounter < 2000; ++frameCounter)
 	{
-		//Allows us to see the frames we will display with cv::imshow
-		cv::waitKey(1);
+		//Allows us to see the frames we will display with cv::imshow (this slows the program down severely when enabled)
+		if(showImages)
+		{
+			cv::waitKey(1);
+		}
 
-		if(frameCounter % 45 == 0)
+		if(frameCounter == 45)
 		{
 			flashCameras(processingVideoSource, viewingVideoSource);
 		}
@@ -290,6 +287,7 @@ int main()
 			openCameras();
 		}
 */
+
 		processingCamera.grabFrame();
 
 		img = processingCamera.retrieveFrame(0);
@@ -334,7 +332,7 @@ int main()
 		{
 			std::cout << "--- Filtered out bad contours ---\n";
 		}
-		
+
 		std::vector<std::array<Contour, 2>> pairs{};
 
 		//Least distant contour initialized with -1 so it's not confused for an actual contour and can be tested for not being valid
@@ -371,7 +369,7 @@ int main()
 					}
 				}
 
-				//If we found the second contour, calculate its position in relation to us
+				//If we found the second contour, add the pair to the list
 				if (leastDistantContour != -1)
 				{
 					pairs.push_back(std::array<Contour, 2>{contours.at(origContour), contours.at(leastDistantContour)});
