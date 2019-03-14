@@ -8,8 +8,10 @@
 #include <chrono>
 
 double distanceTo{0},
-		verticalAngleError{0},
-		horizontalAngleError{0};
+	verticalAngleError{0},
+	horizontalAngleError{0};
+
+bool switchingCameras{false};
 
 cv::Scalar hsvLow{55, 220, 150},
 	hsvHigh{120, 255, 255};
@@ -36,7 +38,7 @@ std::string videoHost{"10.28.51.175"};
 int videoPort{9001};
 
 bool verbose{false};
-bool showImages{false};
+bool showImages{true};
 
 void flashCameras(int processingVideoSource, int viewingVideoSource)
 {
@@ -86,7 +88,7 @@ void openCameras()
 	//Tells the viewingCamera to start reading from the pipeline to process video
 	viewingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "*** Opened viewingCamera ***\n";
 	}
@@ -104,11 +106,11 @@ void openCameras()
 	processingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
 	sprintf(buffer,
-		"v4l2-ctl -d /dev/video%d --set-ctrl gain=24",
-		processingVideoSource);
+			"v4l2-ctl -d /dev/video%d --set-ctrl gain=24",
+			processingVideoSource);
 	system(buffer);
 
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "*** Opened processingCamera ***\n";
 	}
@@ -116,13 +118,13 @@ void openCameras()
 
 void transmitVideo()
 {
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "*** Transmitting video ***\n";
 	}
 
 	char buffer[500];
-	
+
 	sprintf(buffer,
 			"appsrc ! "
 			"video/x-raw,format=(string)BGR,width=(int)%d,height(int)%d,framerate=(fraction)%d/1 ! "
@@ -135,7 +137,7 @@ void transmitVideo()
 	CvVideoWriter_GStreamer videoWriter;
 	videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
 
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "*** Opened video writer ***\n";
 	}
@@ -144,42 +146,50 @@ void transmitVideo()
 	IplImage *img;
 	while (true)
 	{
-		viewingCamera.grabFrame();
-
-		img = viewingCamera.retrieveFrame(0);
-		frame = cv::cvarrToMat(img);
-		
-		if(frame.empty())
+		if (!switchingCameras)
 		{
-			if(verbose)
+			viewingCamera.grabFrame();
+
+			img = viewingCamera.retrieveFrame(0);
+			frame = cv::cvarrToMat(img);
+
+			if (frame.empty())
 			{
-				std::cout << "*** Could not open video transmitting frame; retrying... ***\n";
+				if (verbose)
+				{
+					std::cout << "*** Could not open video transmitting frame; retrying... ***\n";
+				}
+				continue;
 			}
-			continue;
-		}
 
-		cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 2);
+			cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 2);
 
-		cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 75, 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255));
+			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 75, 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255));
 
-		if(verbose)
-		{
-			std::cout << "*** Performed operations on viewingCamera feed ***\n";
-		}
+			if (verbose)
+			{
+				std::cout << "*** Performed operations on viewingCamera feed ***\n";
+			}
 
- 		IplImage outImage = (IplImage) frame;
-		videoWriter.writeFrame(&outImage);
+			IplImage outImage = (IplImage)frame;
+			videoWriter.writeFrame(&outImage);
 
-		if(verbose)
-		{
-			std::cout << "*** Wrote frame to UDP stream ***";
+			if (showImages)
+			{
+				cv::imshow("Transmitted Image", frame);
+			}
+
+			if (verbose)
+			{
+				std::cout << "*** Wrote frame to UDP stream ***";
+			}
 		}
 	}
 }
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
 {
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("Base Image", frame);
 	}
@@ -189,7 +199,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	//Singles out the pixels that meet the HSV range of the target and displays them
 	cv::inRange(frame, hsvLowThreshold, hsvHighThreshold, frame);
 
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("After inRange", frame);
 	}
@@ -203,7 +213,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	cv::erode(frame, frame, morphElement, cv::Point(-1, -1), 2);
 	cv::dilate(frame, frame, morphElement, cv::Point(-1, -1), 2);
 
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("After erosion and dilation", frame);
 	}
@@ -211,7 +221,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	//Applies the Canny edge detection algorithm to extract edges
 	cv::Canny(frame, frame, 0, 0);
 
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("Canny", frame);
 	}
@@ -224,7 +234,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 
 int main()
 {
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "--- Starting program ---\n";
 	}
@@ -237,47 +247,54 @@ int main()
 	// reliably flash them with the correct settings (idk why)
 	flashCameras(viewingVideoSource, processingVideoSource);
 	flashCameras(processingVideoSource, viewingVideoSource);
-	
+
 	openCameras();
 
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "--- Initialization complete ---\n";
 	}
 
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "--- Opened processingCamera ---\n";
 	}
 
 	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-	std::thread transmitVideoThread{transmitVideo};
+	//std::thread transmitVideoThread{transmitVideo};
 
 	cv::Mat frame;
-	IplImage *img;	
-	for (int frameCounter{0}; frameCounter < 2000; ++frameCounter)
+	IplImage *img;
+	for (int frameCounter{0}; ; ++frameCounter)
 	{
 		//Allows us to see the frames we will display with cv::imshow (this slows the program down severely when enabled)
-		if(showImages)
+		if (showImages)
 		{
 			cv::waitKey(1);
 		}
 
-		if(frameCounter == 45)
+		if (frameCounter == 45)
 		{
 			flashCameras(processingVideoSource, viewingVideoSource);
 		}
-
-/*
-		//if(UDPHandler.getMessage() == "CAMSWITCH")
-		if(frameCounter == 100)
+		
+		if (UDPHandler.getMessage() == "CAMSWITCH")
 		{
-			std::cout << "!!!!!!!!! Switching cameras !!!!!!!!!\n";
-			viewingVideoSource == 0 ? 1 : 0;
-			processingVideoSource == 0 ? 1 : 0;
+			if (verbose)
+			{
+				std::cout << "!!! Switching Cameras !!!\n";
+			}
+
+			switchingCameras = true;
+			
+			viewingVideoSource = (viewingVideoSource == 0 ? 1 : 0);
+			processingVideoSource = (processingVideoSource == 0 ? 1 : 0);
 
 			viewingCamera.close();
 			processingCamera.close();
+
+			viewingCamera = CvCapture_GStreamer();
+			processingCamera = CvCapture_GStreamer();
 
 			// We flash the cameras with the incorrect settings first to more
 			// reliably flash them with the correct settings (idk why)
@@ -285,21 +302,22 @@ int main()
 			flashCameras(processingVideoSource, viewingVideoSource);
 
 			openCameras();
+
+			switchingCameras = false;
 		}
-*/
 
 		processingCamera.grabFrame();
 
 		img = processingCamera.retrieveFrame(0);
 		frame = cv::cvarrToMat(img);
 
-		if(frame.empty())
+		if (frame.empty())
 		{
 			std::cout << "Frame is empty\n";
 			exit(-1);
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Retrieved frame ---\n";
 		}
@@ -312,7 +330,7 @@ int main()
 			contours.at(i) = Contour(contoursRaw.at(i));
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Extracted contours ---\n";
 		}
@@ -328,7 +346,7 @@ int main()
 			}
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Filtered out bad contours ---\n";
 		}
@@ -378,12 +396,12 @@ int main()
 			}
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Matched contour pairs ---\n";
 		}
 
-		if(pairs.size() == 0)
+		if (pairs.size() == 0)
 		{
 			continue;
 		}
@@ -401,7 +419,7 @@ int main()
 			}
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Found pairs closest to the center ---\n";
 		}
@@ -420,7 +438,7 @@ int main()
 
 		udpHandler.send(std::to_string(horizontalAngleError));
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Sent angle of error to the roboRIO ---\n";
 		}
