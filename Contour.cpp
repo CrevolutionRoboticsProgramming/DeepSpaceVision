@@ -15,17 +15,24 @@ bool Contour::isValid(double minArea, double minRotation, int error)
 {
     //Aproximates a closed polygon with error 3 around the contour and assigns it to newPoly
     cv::Mat newPoly;
+
+
+
     cv::approxPolyDP(cv::Mat(contour), newPoly, error, true);
 
+    //Saves the dimensions of the contour
+    area = cv::contourArea(contour);
+    rotatedBoundingBox = cv::minAreaRect(newPoly);
+
     //If the area of the contour is less than the specified minimum area, delete it
-    if (cv::contourArea(contour) < minArea)
+    if (area < minArea)
     {
-	//std::cout << "Bad area: " << cv::contourArea(contour) << "\n\n";
+	    //std::cout << "Bad area: " << area << "\n\n";
         return false;
     }
 
     //Draws a rotated rectangle around the contour and assigns its points to points[]
-    cv::minAreaRect(newPoly).points(rotatedBoundingBoxPoints);
+    rotatedBoundingBox.points(rotatedBoundingBoxPoints);
 
     //Finds the indeces of the highest and second-lowest points of the rotated rectangle
     int highestPoint{0}, secondLowestPoint{0};
@@ -54,14 +61,12 @@ bool Contour::isValid(double minArea, double minRotation, int error)
     //If the angle isn't extreme enough, delete the contour
     if ((angle < 0 && angle > -minRotation) || (angle > 0 && angle < minRotation))
     {
-	//std::cout << "Bad angle: " << angle << "\n\n";
+	    //std::cout << "Bad angle: " << angle << "\n\n";
         return false;
     }
 
-    //Saves the dimensions of the contour
+    //Saves a bounding box for the contour
     boundingBox = cv::boundingRect(newPoly);
-    area = cv::contourArea(contour);
-    rotatedBoundingBox = cv::minAreaRect(newPoly);
 
     return true;
 }

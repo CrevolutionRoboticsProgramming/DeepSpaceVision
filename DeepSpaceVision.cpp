@@ -5,51 +5,191 @@
 #include <opencv2/opencv.hpp>
 #include <array>
 #include <unistd.h>
+#include <chrono>
 
-cv::Scalar hsvLow{36, 64, 200},
-	hsvHigh{83, 255, 255};
+double distanceTo{0},
+	verticalAngleError{0},
+	horizontalAngleError{0};
 
-double fovAngle{40}; //20.93}; //The one we have now is for the smaller one //41.86};
+bool switchingCameras{false};
+
+cv::Scalar hsvLow{45, 100, 230},
+	hsvHigh{120, 205, 255};
+
+double fovAngle{30}; //20.93}; //The one we have now is for the smaller one //41.86};
 
 int contourPolygonAccuracy{5};
 
 int minArea{60},
 	minRotation{30};
 
-int processingVideoSource{1},
-	viewingVideoSource{0};
+int processingVideoSource{0},
+	viewingVideoSource{1};
+
+CvCapture_GStreamer processingCamera;
+CvCapture_GStreamer viewingCamera;
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{320}, height{240};
 int framerate{15};
-std::string videoHost{"10.28.51.175"};
+std::string videoHost{"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//"192.168.137.1"};
 int videoPort{9001};
 
-bool verbose{true};
-bool showImages{true};
+bool verbose{false};
+bool showImages{false};
+
+void flashCameras(int processingVideoSource, int viewingVideoSource)
+{
+	char buffer[500];
+
+	//Flashes the processingCamera with optimal settings for identifying the targets
+	sprintf(buffer,
+			"v4l2-ctl -d /dev/video%d \
+		--set-ctrl brightness=100 \
+		--set-ctrl contrast=255 \
+		--set-ctrl saturation=100 \
+		--set-ctrl white_balance_temperature_auto=1 \
+		--set-ctrl sharpness=24 \
+		--set-ctrl gain=24 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=240",
+			processingVideoSource);
+	system(buffer);
+
+	//Makes sure the viewingCamera is set to its optimal settings for actually seeing what's going on
+	sprintf(buffer,
+			"v4l2-ctl -d /dev/video%d \
+		--set-ctrl brightness=128 \
+		--set-ctrl contrast=32 \
+		--set-ctrl saturation=32 \
+		--set-ctrl white_balance_temperature_auto=1 \
+		--set-ctrl sharpness=24 \
+		--set-ctrl gain=24 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=240",
+			viewingVideoSource);
+	system(buffer);
+}
+
+void openCameras()
+{
+	char buffer[500];
+
+	//Creates an array of characters (acts like a string) to hold the
+	//gstreamer pipeline
+	sprintf(buffer,
+			"v4l2src device=/dev/video%d ! "
+			"video/x-raw,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+			"queue ! autovideoconvert ! appsink",
+			viewingVideoSource, width, height, framerate);
+
+	//Tells the viewingCamera to start reading from the pipeline to process video
+	viewingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
+
+	if (verbose)
+	{
+		std::cout << "*** Opened viewingCamera ***\n";
+	}
+
+	//Creates an array of characters (acts like a string) to hold the
+	//gstreamer pipeline
+	sprintf(buffer,
+			"v4l2src device=/dev/video%d ! "
+			"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+			"videoflip method=clockwise ! "
+			"queue ! autovideoconvert ! appsink",
+			processingVideoSource, width, height, framerate);
+
+	//Tells the processingCamera to start reading from the pipeline to process video
+	processingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
+
+	sprintf(buffer,
+			"v4l2-ctl -d /dev/video%d --set-ctrl gain=24",
+			processingVideoSource);
+	system(buffer);
+
+	if (verbose)
+	{
+		std::cout << "*** Opened processingCamera ***\n";
+	}
+}
 
 void transmitVideo()
 {
-	if(verbose)
+	if (verbose)
 	{
-		std::cout << "--- Transmitting video ---\n";
+		std::cout << "*** Transmitting video ***\n";
 	}
 
 	char buffer[500];
+
 	sprintf(buffer,
-			"gst-launch-1.0 -v v4l2src device=/dev/video%d ! "
-			"image/jpeg,width=%d,height=%d,framerate=%d/1 ! "
+			"appsrc ! "
+			"video/x-raw,format=(string)BGR,width=(int)%d,height(int)%d,framerate=(fraction)%d/1 ! "
+			"videoconvert ! video/x-raw,format=(string)I420 ! "
+			"jpegenc ! "
 			"rtpjpegpay ! "
 			"udpsink host=%s port=%d sync=false async=false",
-			viewingVideoSource, width, height, framerate, videoHost.c_str(), videoPort);
-	system(buffer);
+			width, height, framerate, videoHost.c_str(), videoPort);
+
+	CvVideoWriter_GStreamer videoWriter;
+	videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
+
+	if (verbose)
+	{
+		std::cout << "*** Opened video writer ***\n";
+	}
+
+	cv::Mat frame;
+	IplImage *img;
+	while (true)
+	{
+		if (!switchingCameras)
+		{
+			viewingCamera.grabFrame();
+
+			img = viewingCamera.retrieveFrame(0);
+			frame = cv::cvarrToMat(img);
+
+			if (frame.empty())
+			{
+				if (verbose)
+				{
+					std::cout << "*** Could not open video transmitting frame; retrying... ***\n";
+				}
+				continue;
+			}
+
+			cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 1.5);
+
+			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 100, 15), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255));
+
+			if (verbose)
+			{
+				std::cout << "*** Performed operations on viewingCamera feed ***\n";
+			}
+
+			IplImage outImage = (IplImage)frame;
+			videoWriter.writeFrame(&outImage);
+
+			if (showImages)
+			{
+				cv::imshow("Transmitted Image", frame);
+			}
+
+			if (verbose)
+			{
+				std::cout << "*** Wrote frame to UDP stream ***";
+			}
+		}
+	}
 }
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
 {
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("Base Image", frame);
 	}
@@ -59,7 +199,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	//Singles out the pixels that meet the HSV range of the target and displays them
 	cv::inRange(frame, hsvLowThreshold, hsvHighThreshold, frame);
 
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("After inRange", frame);
 	}
@@ -73,7 +213,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	cv::erode(frame, frame, morphElement, cv::Point(-1, -1), 2);
 	cv::dilate(frame, frame, morphElement, cv::Point(-1, -1), 2);
 
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("After erosion and dilation", frame);
 	}
@@ -81,7 +221,7 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 	//Applies the Canny edge detection algorithm to extract edges
 	cv::Canny(frame, frame, 0, 0);
 
-	if(showImages)
+	if (showImages)
 	{
 		cv::imshow("Canny", frame);
 	}
@@ -94,112 +234,92 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
 
 int main()
 {
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "--- Starting program ---\n";
 	}
 
-	cv::Mat frame;
-
-	double distanceTo{0},
-		verticalAngleError{0},
-		horizontalAngleError{0};
-
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
-	
-	char buffer[500];
 
-	//Flashes the camera with optimal settings for identifying the targets
-	sprintf(buffer,
-			"v4l2-ctl -d /dev/video%d \
-		--set-ctrl brightness=100 \
-		--set-ctrl contrast=0 \
-		--set-ctrl saturation=100 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=9000 \
-		--set-ctrl power_line_frequency=2 \
-		--set-ctrl sharpness=24 \
-		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=5",
-			processingVideoSource);
-	system(buffer);
+	// We flash the cameras with the incorrect settings first to more
+	// reliably flash them with the correct settings (idk why)
+	flashCameras(viewingVideoSource, processingVideoSource);
+	flashCameras(processingVideoSource, viewingVideoSource);
 
-	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
-	sprintf(buffer,
-			"v4l2-ctl -d /dev/video%d \
-		--set-ctrl brightness=100 \
-		--set-ctrl contrast=25 \
-		--set-ctrl saturation=30 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=50 \
-		--set-ctrl power_line_frequency=2 \
-		--set-ctrl sharpness=50 \
-		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=50",
-			viewingVideoSource);
-	system(buffer);
+	openCameras();
 
-	//Makes sure the camera is set to its optimal settings for actually seeing what's going on
-	sprintf(buffer, 
-		"v4l2-ctl -d /dev/video%d \
-		--set-ctrl brightness=50 \
-		--set-ctrl contrast=25 \
-		--set-ctrl saturation=30 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=50 \
-		--set-ctrl power_line_frequency=2 \
-		--set-ctrl sharpness=50 \
-		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=50",
-		viewingVideoSource);
-	system(buffer);
-	
-	CvCapture_GStreamer camera;
-
-	//Creates an array of characters (acts like a string) to hold the
-	//gstreamer pipeline
-	sprintf(buffer,
-			"v4l2src device=/dev/video%d ! "
-			"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
-			"queue ! autovideoconvert ! appsink",
-			processingVideoSource, width, height, framerate);
-
-	if(verbose)
+	if (verbose)
 	{
 		std::cout << "--- Initialization complete ---\n";
 	}
 
-	//Tells the camera to start reading from the pipeline to process video
-	//camera.open(CV_CAP_GSTREAMER_FILE, buffer);
-
-	if(verbose)
+	if (verbose)
 	{
-		std::cout << "--- Opened camera ---\n";
+		std::cout << "--- Opened processingCamera ---\n";
 	}
 
-    //Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-    std::thread transmitVideoThread{transmitVideo};
+	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
+	std::thread transmitVideoThread{transmitVideo};
 
+	cv::Mat frame;
 	IplImage *img;
-	while (true)
+	for (int frameCounter{0}; ; ++frameCounter)
 	{
-		//Allows us to see the frames we will display with cv::imshow
-		cv::waitKey(1);
+		//Allows us to see the frames we will display with cv::imshow (this slows the program down severely when enabled)
+		if (showImages)
+		{
+			cv::waitKey(1);
+		}
 
-		camera.grabFrame();
+		if (frameCounter == 45)
+		{
+			flashCameras(processingVideoSource, viewingVideoSource);
+		}
+		
+		if (udpHandler.getMessage() == "CAMSWITCH")
+		{
+			if (verbose)
+			{
+				std::cout << "!!! Switching Cameras !!!\n";
+			}
 
-		img = camera.retrieveFrame(0);
+			switchingCameras = true;
+			
+			viewingVideoSource = (viewingVideoSource == 0 ? 1 : 0);
+			processingVideoSource = (processingVideoSource == 0 ? 1 : 0);
+
+			viewingCamera.close();
+			processingCamera.close();
+
+			viewingCamera = CvCapture_GStreamer();
+			processingCamera = CvCapture_GStreamer();
+
+			// We flash the cameras with the incorrect settings first to more
+			// reliably flash them with the correct settings (idk why)
+			flashCameras(viewingVideoSource, processingVideoSource);
+			flashCameras(processingVideoSource, viewingVideoSource);
+
+			openCameras();
+
+			udpHandler.clearMessage();
+
+			switchingCameras = false;
+		}
+
+		processingCamera.grabFrame();
+
+		img = processingCamera.retrieveFrame(0);
 		frame = cv::cvarrToMat(img);
 
-		if(frame.empty())
+		if (frame.empty())
 		{
 			std::cout << "Frame is empty\n";
 			exit(-1);
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Retrieved frame ---\n";
 		}
@@ -212,7 +332,7 @@ int main()
 			contours.at(i) = Contour(contoursRaw.at(i));
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Extracted contours ---\n";
 		}
@@ -228,11 +348,11 @@ int main()
 			}
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Filtered out bad contours ---\n";
 		}
-		
+
 		std::vector<std::array<Contour, 2>> pairs{};
 
 		//Least distant contour initialized with -1 so it's not confused for an actual contour and can be tested for not being valid
@@ -269,7 +389,7 @@ int main()
 					}
 				}
 
-				//If we found the second contour, calculate its position in relation to us
+				//If we found the second contour, add the pair to the list
 				if (leastDistantContour != -1)
 				{
 					pairs.push_back(std::array<Contour, 2>{contours.at(origContour), contours.at(leastDistantContour)});
@@ -278,12 +398,12 @@ int main()
 			}
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Matched contour pairs ---\n";
 		}
 
-		if(pairs.size() == 0)
+		if (pairs.size() == 0)
 		{
 			continue;
 		}
@@ -301,7 +421,7 @@ int main()
 			}
 		}
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Found pairs closest to the center ---\n";
 		}
@@ -320,39 +440,9 @@ int main()
 
 		udpHandler.send(std::to_string(horizontalAngleError));
 
-		if(verbose)
+		if (verbose)
 		{
 			std::cout << "--- Sent angle of error to the roboRIO ---\n";
 		}
 	}
 }
-
-/*
-	Theory
-
-	Tape is 5.5in long by 2in wide
-	Angled at ~14.5 degrees towards each other
-	8in gap at their closest
-
-	1. Identify compliant shapes
-	2. Calculate angles of tape
-	3. Identify compliant pairs (angled right is left of angled left by certain amount determined by ratio of size)
-		a. If no compliant pairs, do nothing
-	4. Calculate distance to tape and angle of error
-
-	What do when no see full tape?!?!?
-	Tell drivers to back up enough to see full tape -> angle correctly -> drive forward?
-
-	Positive angle means angled right, negative angle means angled left
-*/
-
-//3.1875'
-//theta = arctan(Tft*FOVpixel/(Tpixel*d))
-//3.75' = 41.96
-//5.91667 = 42.788
-//8.75 = 41.828
-//11 = 41.3132
-//13.1667 = 41.6
-//15.58333 = 41.686
-
-//Average = 41.86
