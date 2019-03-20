@@ -13,8 +13,8 @@ double distanceTo{0},
 
 bool switchingCameras{false};
 
-cv::Scalar hsvLow{55, 220, 150},
-	hsvHigh{120, 255, 255};
+cv::Scalar hsvLow{70, 160, 230},
+	hsvHigh{110, 200, 255};
 
 double fovAngle{30}; //20.93}; //The one we have now is for the smaller one //41.86};
 
@@ -23,8 +23,8 @@ int contourPolygonAccuracy{5};
 int minArea{60},
 	minRotation{30};
 
-int processingVideoSource{1},
-	viewingVideoSource{0};
+int processingVideoSource{0},
+	viewingVideoSource{1};
 
 CvCapture_GStreamer processingCamera;
 CvCapture_GStreamer viewingCamera;
@@ -34,11 +34,11 @@ int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{320}, height{240};
 int framerate{15};
-std::string videoHost{"10.28.51.175"};
+std::string videoHost{"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//"192.168.137.1"};
 int videoPort{9001};
 
 bool verbose{false};
-bool showImages{true};
+bool showImages{false};
 
 void flashCameras(int processingVideoSource, int viewingVideoSource)
 {
@@ -48,9 +48,10 @@ void flashCameras(int processingVideoSource, int viewingVideoSource)
 	sprintf(buffer,
 			"v4l2-ctl -d /dev/video%d \
 		--set-ctrl brightness=100 \
-		--set-ctrl contrast=0 \
+		--set-ctrl contrast=255 \
 		--set-ctrl saturation=100 \
-		--set-ctrl white_balance_temperature_auto=1 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=0 \
 		--set-ctrl sharpness=24 \
 		--set-ctrl gain=24 \
 		--set-ctrl exposure_auto=1 \
@@ -162,9 +163,9 @@ void transmitVideo()
 				continue;
 			}
 
-			cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 2);
+			cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 1.5);
 
-			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 75, 20), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255));
+			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 100, 15), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255));
 
 			if (verbose)
 			{
@@ -261,7 +262,7 @@ int main()
 	}
 
 	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
-	//std::thread transmitVideoThread{transmitVideo};
+	std::thread transmitVideoThread{transmitVideo};
 
 	cv::Mat frame;
 	IplImage *img;
@@ -278,7 +279,7 @@ int main()
 			flashCameras(processingVideoSource, viewingVideoSource);
 		}
 		
-		if (UDPHandler.getMessage() == "CAMSWITCH")
+		if (udpHandler.getMessage() == "CAMSWITCH")
 		{
 			if (verbose)
 			{
@@ -302,6 +303,8 @@ int main()
 			flashCameras(processingVideoSource, viewingVideoSource);
 
 			openCameras();
+
+			udpHandler.clearMessage();
 
 			switchingCameras = false;
 		}
