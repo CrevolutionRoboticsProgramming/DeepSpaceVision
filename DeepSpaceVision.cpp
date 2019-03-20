@@ -13,8 +13,8 @@ double distanceTo{0},
 
 bool switchingCameras{false};
 
-cv::Scalar hsvLow{45, 100, 230},
-	hsvHigh{120, 205, 255};
+cv::Scalar hsvLow{70, 160, 230},
+	hsvHigh{110, 200, 255};
 
 double fovAngle{30}; //20.93}; //The one we have now is for the smaller one //41.86};
 
