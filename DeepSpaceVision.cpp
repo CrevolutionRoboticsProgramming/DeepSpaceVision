@@ -50,7 +50,8 @@ void flashCameras(int processingVideoSource, int viewingVideoSource)
 		--set-ctrl brightness=100 \
 		--set-ctrl contrast=255 \
 		--set-ctrl saturation=100 \
-		--set-ctrl white_balance_temperature_auto=1 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=0 \
 		--set-ctrl sharpness=24 \
 		--set-ctrl gain=24 \
 		--set-ctrl exposure_auto=1 \
