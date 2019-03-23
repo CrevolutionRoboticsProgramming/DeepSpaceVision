@@ -311,36 +311,6 @@ int main()
 		{
 			flashCameras(processingVideoSource, viewingVideoSource);
 		}
-		
-		if (udpHandler.getMessage() == "CAMSWITCH")
-		{
-			if (verbose)
-			{
-				std::cout << "!!! Switching Cameras !!!\n";
-			}
-
-			switchingCameras = true;
-			
-			viewingVideoSource = (viewingVideoSource == 0 ? 1 : 0);
-			processingVideoSource = (processingVideoSource == 0 ? 1 : 0);
-
-			viewingCamera.close();
-			processingCamera.close();
-
-			viewingCamera = CvCapture_GStreamer();
-			processingCamera = CvCapture_GStreamer();
-
-			// We flash the cameras with the incorrect settings first to more
-			// reliably flash them with the correct settings (idk why)
-			flashCameras(viewingVideoSource, processingVideoSource);
-			flashCameras(processingVideoSource, viewingVideoSource);
-
-			openCameras();
-
-			udpHandler.clearMessage();
-
-			switchingCameras = false;
-		}
 
 		processingCamera.grabFrame();
 
