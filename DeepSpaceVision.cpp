@@ -23,8 +23,11 @@ int contourPolygonAccuracy{5};
 int minArea{60},
 	minRotation{30};
 
-int processingVideoSource{1},
-	viewingVideoSource{0};
+int processingVideoSource{0},
+	viewingVideoSource{1};
+
+CvCapture_GStreamer processingCamera;
+CvCapture_GStreamer viewingCamera;
 
 CvCapture_GStreamer processingCamera;
 CvCapture_GStreamer viewingCamera;
@@ -34,7 +37,8 @@ int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{320}, height{240};
 int framerate{15};
-std::string videoHost{"10.28.51.175"};//"192.168.1.130"};////"10.0.0.178"};////"10.28.51.201"};//"192.168.137.1"};
+
+std::string videoHost{"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//"192.168.137.1"};
 int videoPort{9001};
 
 bool verbose{false};
@@ -273,8 +277,8 @@ int main()
 
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
-	//setCameraNumbers();
-
+	setCameraNumbers();
+  
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
 
 	// We flash the cameras with the incorrect settings first to more
