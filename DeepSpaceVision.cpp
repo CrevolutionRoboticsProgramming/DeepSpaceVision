@@ -34,11 +34,40 @@ int udpSendPort{9000}, udpReceivePort{9001};
 
 int width{320}, height{240};
 int framerate{15};
-std::string videoHost{"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//"192.168.137.1"};
+
+std::string videoHost{"192.168.137.1"};//"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//
 int videoPort{9001};
 
 bool verbose{false};
 bool showImages{false};
+
+void setCameraNumbers()
+{
+	FILE * uname;
+	char consoleOutput[300];
+	int lastchar;
+
+	// Executes the command supplied to popen and saves the output in the char array
+	uname = popen("v4l2-ctl --list-devices", "r");
+	lastchar = fread(consoleOutput, 1, 300, uname);
+	consoleOutput[lastchar] = '\0';
+
+	// Converts the char array to a std::string
+	std::string outputString = consoleOutput;
+
+	/**
+	 * Working from the inside out:
+	 * 	- Finds where the camera's name is in the string
+	 * 	- Uses the location of the first character in that string as the starting point for a new search for the location of the first character in /dev/video
+	 * 	- Looks ten characters down the string to find the number that comes after /dev/video
+	 * 	- Parses the output character for an integer
+	 * 	- Assigns that integer to the appropriate variable
+	 */
+	viewingVideoSource = outputString.at(outputString.find("/dev/video", outputString.find("USB 2.0 Camera: HD USB Camera")) + 10) - '0';
+	processingVideoSource = outputString.at(outputString.find("/dev/video", outputString.find("UVC Camera (046d:081b)")) + 10) - '0';
+
+	pclose(uname);
+}
 
 void flashCameras(int processingVideoSource, int viewingVideoSource)
 {
@@ -55,21 +84,21 @@ void flashCameras(int processingVideoSource, int viewingVideoSource)
 		--set-ctrl sharpness=24 \
 		--set-ctrl gain=24 \
 		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=240",
+		--set-ctrl exposure_absolute=120",
 			processingVideoSource);
 	system(buffer);
 
 	//Makes sure the viewingCamera is set to its optimal settings for actually seeing what's going on
 	sprintf(buffer,
 			"v4l2-ctl -d /dev/video%d \
-		--set-ctrl brightness=128 \
+		--set-ctrl brightness=0 \
 		--set-ctrl contrast=32 \
-		--set-ctrl saturation=32 \
+		--set-ctrl saturation=64 \
 		--set-ctrl white_balance_temperature_auto=1 \
 		--set-ctrl sharpness=24 \
 		--set-ctrl gain=24 \
-		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=240",
+		--set-ctrl power_line_frequency=2 \
+		--set-ctrl exposure_auto=0",
 			viewingVideoSource);
 	system(buffer);
 }
@@ -78,12 +107,15 @@ void openCameras()
 {
 	char buffer[500];
 
+	/*
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
 	sprintf(buffer,
 			"v4l2src device=/dev/video%d ! "
-			"video/x-raw,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
-			"queue ! autovideoconvert ! appsink",
+			"video/x-raw,format=(string)YUY2,width=(int)%d,height=(int)%d,framerate=(fraction)30/1 ! "
+			"queue ! videoconvert ! videoscale ! videorate ! "
+			"video/x-raw,framerate=%d/1 ! "
+			"autovideoconvert ! appsink",
 			viewingVideoSource, width, height, framerate);
 
 	//Tells the viewingCamera to start reading from the pipeline to process video
@@ -93,12 +125,13 @@ void openCameras()
 	{
 		std::cout << "*** Opened viewingCamera ***\n";
 	}
+	*/
 
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
 	sprintf(buffer,
 			"v4l2src device=/dev/video%d ! "
-			"video/x-raw,format=(string)I420,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+			"video/x-raw,format=(string)YUY2,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
 			"videoflip method=clockwise ! "
 			"queue ! autovideoconvert ! appsink",
 			processingVideoSource, width, height, framerate);
@@ -123,17 +156,18 @@ void transmitVideo()
 	{
 		std::cout << "*** Transmitting video ***\n";
 	}
+	/*
 
 	char buffer[500];
 
 	sprintf(buffer,
 			"appsrc ! "
-			"video/x-raw,format=(string)BGR,width=(int)%d,height(int)%d,framerate=(fraction)%d/1 ! "
-			"videoconvert ! video/x-raw,format=(string)I420 ! "
+			"video/x-raw,format=(string)BGR,width=(int)320,height=(int)240,framerate=(fraction)15/1 ! "
+			"videoconvert ! video/x-raw,format=I420 ! "
 			"jpegenc ! "
 			"rtpjpegpay ! "
 			"udpsink host=%s port=%d sync=false async=false",
-			width, height, framerate, videoHost.c_str(), videoPort);
+			videoHost.c_str(), videoPort);
 
 	CvVideoWriter_GStreamer videoWriter;
 	videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
@@ -182,10 +216,19 @@ void transmitVideo()
 
 			if (verbose)
 			{
-				std::cout << "*** Wrote frame to UDP stream ***";
+				std::cout << "*** Wrote frame to UDP stream ***\n";
 			}
 		}
 	}
+	*/
+	
+	char buffer[500];
+	sprintf(buffer,
+		"LD_LIBRARY_PATH=/usr/local/lib mjpg_streamer -i \
+		\"input_uvc.so -d /dev/video%d -r %dx%d -f %d\" \
+		-o \"output_http.so -w /usr/local/www\"",
+		viewingVideoSource, width, height, framerate);
+	system(buffer);
 }
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
@@ -242,6 +285,8 @@ int main()
 
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
+	//setCameraNumbers();
+  
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
 
 	// We flash the cameras with the incorrect settings first to more
@@ -277,36 +322,6 @@ int main()
 		if (frameCounter == 45)
 		{
 			flashCameras(processingVideoSource, viewingVideoSource);
-		}
-		
-		if (udpHandler.getMessage() == "CAMSWITCH")
-		{
-			if (verbose)
-			{
-				std::cout << "!!! Switching Cameras !!!\n";
-			}
-
-			switchingCameras = true;
-			
-			viewingVideoSource = (viewingVideoSource == 0 ? 1 : 0);
-			processingVideoSource = (processingVideoSource == 0 ? 1 : 0);
-
-			viewingCamera.close();
-			processingCamera.close();
-
-			viewingCamera = CvCapture_GStreamer();
-			processingCamera = CvCapture_GStreamer();
-
-			// We flash the cameras with the incorrect settings first to more
-			// reliably flash them with the correct settings (idk why)
-			flashCameras(viewingVideoSource, processingVideoSource);
-			flashCameras(processingVideoSource, viewingVideoSource);
-
-			openCameras();
-
-			udpHandler.clearMessage();
-
-			switchingCameras = false;
 		}
 
 		processingCamera.grabFrame();
@@ -436,10 +451,38 @@ int main()
 		//distanceTo = (regression function);
 		horizontalAngleError = -((frame.cols / 2.0) - centerX) / frame.cols * fovAngle;
 		verticalAngleError = ((frame.rows / 2.0) - centerY) / frame.rows * fovAngle;
+		
+		double height = closestPair.at(0).rotatedBoundingBox.size.height;
+		
+		// Some hand waving because I don't want to transcribe a proof
+		/*
+		FOV of camera: 60 degrees vertically (because it's on its side)
+		Dimensions: 240 x 320 (because it's on its side)
+		
+		height(pixels) / 320(total pixels) = 6.31(height of tape in inches) / height(of frame in inches)
+		height(of frame in inches) = 6.31 * 320 / height(pixels)
+		
+		tan(30) = 0.5*height(of frame in inches) / distance
+		distance = 0.5*height(of frame in inches) / tan(30)
+		
+		simplifies to:
+		distance = 1751.45 / height(pixels)
+		*/
+		double distance = 1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
+		
+		// Conversion to radians (the std trigonometry functions only take radians)
+		horizontalAngleError *= 3.141592654 / 180;
 
-		//std::cout << horizontalAngleError << '\n';
+		horizontalAngleError = std::atan(distance * std::sin(horizontalAngleError) / (distance * std::cos(horizontalAngleError) - 7.5));
+
+		// Conversion back to degrees
+		horizontalAngleError *= 180 / 3.141592654;
 
 		udpHandler.send(std::to_string(horizontalAngleError));
+		
+		std::cout << "Height (in pixels): " << closestPair.at(0).rotatedBoundingBox.size.height << '\n';
+		std::cout << "Distance: " << distance << '\n';
+		std::cout << "AOE: " << horizontalAngleError << "\n\n";
 
 		if (verbose)
 		{
@@ -447,3 +490,4 @@ int main()
 		}
 	}
 }
+
