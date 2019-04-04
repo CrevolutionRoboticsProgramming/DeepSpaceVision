@@ -29,6 +29,9 @@ int processingVideoSource{0},
 CvCapture_GStreamer processingCamera;
 CvCapture_GStreamer viewingCamera;
 
+CvCapture_GStreamer processingCamera;
+CvCapture_GStreamer viewingCamera;
+
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{9000}, udpReceivePort{9001};
 
