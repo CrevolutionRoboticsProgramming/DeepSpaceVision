@@ -35,7 +35,7 @@ int udpSendPort{9000}, udpReceivePort{9001};
 int width{320}, height{240};
 int framerate{15};
 
-std::string videoHost{"192.168.137.1"};//"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//
+std::string videoHost{"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//"192.168.137.1"};//
 int videoPort{9001};
 
 bool verbose{false};
@@ -107,7 +107,6 @@ void openCameras()
 {
 	char buffer[500];
 
-	/*
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
 	sprintf(buffer,
@@ -125,7 +124,6 @@ void openCameras()
 	{
 		std::cout << "*** Opened viewingCamera ***\n";
 	}
-	*/
 
 	//Creates an array of characters (acts like a string) to hold the
 	//gstreamer pipeline
@@ -156,16 +154,15 @@ void transmitVideo()
 	{
 		std::cout << "*** Transmitting video ***\n";
 	}
-	/*
 
 	char buffer[500];
 
 	sprintf(buffer,
 			"appsrc ! "
 			"video/x-raw,format=(string)BGR,width=(int)320,height=(int)240,framerate=(fraction)15/1 ! "
-			"videoconvert ! video/x-raw,format=I420 ! "
-			"jpegenc ! "
-			"rtpjpegpay ! "
+			"videoconvert ! video/x-raw,format=H264 ! "
+			"omxh264enc ! "
+			"rtph264pay ! "
 			"udpsink host=%s port=%d sync=false async=false",
 			videoHost.c_str(), videoPort);
 
@@ -220,15 +217,6 @@ void transmitVideo()
 			}
 		}
 	}
-	*/
-	
-	char buffer[500];
-	sprintf(buffer,
-		"LD_LIBRARY_PATH=/usr/local/lib mjpg_streamer -i \
-		\"input_uvc.so -d /dev/video%d -r %dx%d -f %d\" \
-		-o \"output_http.so -w /usr/local/www\"",
-		viewingVideoSource, width, height, framerate);
-	system(buffer);
 }
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
@@ -285,7 +273,7 @@ int main()
 
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
-	//setCameraNumbers();
+	setCameraNumbers();
   
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
 
