@@ -16,7 +16,8 @@ bool switchingCameras{false};
 cv::Scalar hsvLow{70, 160, 230},
 	hsvHigh{110, 200, 255};
 
-double fovAngle{30}; //20.93}; //The one we have now is for the smaller one //41.86};
+double horizontalFOV{30},
+	verticalFOV{60}; //20.93}; //The one we have now is for the smaller one //41.86};
 
 int contourPolygonAccuracy{5};
 
@@ -30,13 +31,13 @@ CvCapture_GStreamer processingCamera;
 CvCapture_GStreamer viewingCamera;
 
 std::string udpHost{"10.28.51.2"};
-int udpSendPort{9000}, udpReceivePort{9001};
+int udpSendPort{1182}, udpReceivePort{1183};
 
-int width{320}, height{240};
+int width{160}, height{120};
 int framerate{15};
 
 std::string videoHost{"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//"192.168.137.1"};//
-int videoPort{9001};
+int videoPort{1181};
 
 bool verbose{false};
 bool showImages{false};
@@ -117,6 +118,7 @@ void openCameras()
 			"autovideoconvert ! appsink",
 			viewingVideoSource, width, height, framerate);
 
+
 	//Tells the viewingCamera to start reading from the pipeline to process video
 	viewingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
 
@@ -159,12 +161,18 @@ void transmitVideo()
 
 	sprintf(buffer,
 			"appsrc ! "
-			"video/x-raw,format=(string)BGR,width=(int)320,height=(int)240,framerate=(fraction)15/1 ! "
-			"videoconvert ! video/x-raw,format=H264 ! "
-			"omxh264enc ! "
-			"rtph264pay ! "
-			"udpsink host=%s port=%d sync=false async=false",
-			videoHost.c_str(), videoPort);
+			"video/x-raw,format=(string)BGR,width=(int)%d,height=(int)%d,framerate=(fraction)15/1 ! "
+			//"autovideoconvert ! video/x-raw,format=H264 ! "
+			//"omxh264enc ! "
+			//"rtph264pay ! "
+			"videoconvert ! video/x-raw,format=I420 ! "
+			"jpegenc ! "
+			"multifilesink location=/home/pi/pic.jpeg max-files=1",
+			//"rtpjpegpay ! "
+			//"udpsink host=%s port=%d sync=false async=false",
+			//videoHost.c_str(), videoPort
+			width, height
+			);
 
 	CvVideoWriter_GStreamer videoWriter;
 	videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
@@ -196,7 +204,7 @@ void transmitVideo()
 
 			cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 1.5);
 
-			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 100, 15), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255));
+			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 100, 15), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(255, 255, 255));
 
 			if (verbose)
 			{
@@ -217,6 +225,19 @@ void transmitVideo()
 			}
 		}
 	}
+}
+
+void legitSendVideo()
+{
+	char buffer[500];
+	
+	sprintf(buffer,
+			"LD_LIBRARY_PATH=/usr/local/lib mjpg_streamer "
+			"-i \"input_file.so -f /home/pi -n pic.jpeg -d 0\" "
+			"-o \"output_http.so -w /tmp -p %d\"",
+			videoPort);
+			
+	system(buffer);
 }
 
 void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat frame, cv::Scalar &hsvLowThreshold, cv::Scalar &hsvHighThreshold, cv::Mat morphElement)
@@ -296,6 +317,7 @@ int main()
 
 	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
 	std::thread transmitVideoThread{transmitVideo};
+	std::thread legitSendVideoThread{legitSendVideo};
 
 	cv::Mat frame;
 	IplImage *img;
@@ -437,40 +459,37 @@ int main()
 		//The original contour will always be the left one since that's what we've specified
 		//Calculates and spits out some values for us
 		//distanceTo = (regression function);
-		horizontalAngleError = -((frame.cols / 2.0) - centerX) / frame.cols * fovAngle;
-		verticalAngleError = ((frame.rows / 2.0) - centerY) / frame.rows * fovAngle;
+		horizontalAngleError = -((frame.cols / 2.0) - centerX) / frame.cols * horizontalFOV;
+		//verticalAngleError = ((frame.rows / 2.0) - centerY) / frame.rows * horizontalFOV;
 		
-		double height = closestPair.at(0).rotatedBoundingBox.size.height;
+		double height = closestPair.at(0).rotatedBoundingBox.size.width;
 		
-		// Some hand waving because I don't want to transcribe a proof
 		/*
-		FOV of camera: 60 degrees vertically (because it's on its side)
-		Dimensions: 240 x 320 (because it's on its side)
+		height(pixels) / vertical(total pixels) = 6.31(height of tape in inches) / height(of frame in inches)
+		height of frame(inches) = 6.31 * vertical(pixels) / height(pixels)
 		
-		height(pixels) / 320(total pixels) = 6.31(height of tape in inches) / height(of frame in inches)
-		height(of frame in inches) = 6.31 * 320 / height(pixels)
+		tan(30) = 0.5*height of frame(inches) / distance
+		distance = 0.5*height of frame(inches) / tan(30)
 		
-		tan(30) = 0.5*height(of frame in inches) / distance
-		distance = 0.5*height(of frame in inches) / tan(30)
-		
-		simplifies to:
-		distance = 1751.45 / height(pixels)
+		distance = 0.5 * 6.31 * vertical(pixels) / height(pixels) / tan(vertical FOV / 2)
 		*/
-		double distance = 1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
+		double distance = 0.5 * 6.31 * frame.rows / height / std::tan(verticalFOV * 0.5 * 3.141592654 / 180);//1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
 		
 		// Conversion to radians (the std trigonometry functions only take radians)
 		horizontalAngleError *= 3.141592654 / 180;
 
-		horizontalAngleError = std::atan(distance * std::sin(horizontalAngleError) / (distance * std::cos(horizontalAngleError) - 7.5));
+		//horizontalAngleError = std::atan(distance * std::sin(horizontalAngleError) / (distance * std::cos(horizontalAngleError) - 7.5));
 
 		// Conversion back to degrees
 		horizontalAngleError *= 180 / 3.141592654;
 
 		udpHandler.send(std::to_string(horizontalAngleError));
 		
-		std::cout << "Height (in pixels): " << closestPair.at(0).rotatedBoundingBox.size.height << '\n';
-		std::cout << "Distance: " << distance << '\n';
-		std::cout << "AOE: " << horizontalAngleError << "\n\n";
+		//std::cout << "Max - min y: " << closestPair.at(0).rotatedBoundingBoxPoints[3] -  closestPair.at(0).rotatedBoundingBoxPoints[1] << "\n\n";
+		
+		//std::cout << "Height (in pixels): " << height << '\n';
+		//std::cout << "Distance: " << distance << '\n';
+		//std::cout << "AOE: " << horizontalAngleError << "\n\n";
 
 		if (verbose)
 		{
