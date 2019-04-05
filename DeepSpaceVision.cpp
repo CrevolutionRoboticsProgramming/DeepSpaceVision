@@ -112,10 +112,8 @@ void openCameras()
 	//gstreamer pipeline
 	sprintf(buffer,
 			"v4l2src device=/dev/video%d ! "
-			"video/x-raw,format=(string)YUY2,width=(int)%d,height=(int)%d,framerate=(fraction)30/1 ! "
-			"queue ! videoconvert ! videoscale ! videorate ! "
-			"video/x-raw,framerate=%d/1 ! "
-			"autovideoconvert ! appsink",
+			"video/x-raw,format=(string)YUY2,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
+			"queue ! autovideoconvert ! appsink",
 			viewingVideoSource, width, height, framerate);
 
 
@@ -204,7 +202,7 @@ void transmitVideo()
 
 			cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 1.5);
 
-			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 100, 15), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(255, 255, 255));
+			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 50, 7), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(255, 255, 255));
 
 			if (verbose)
 			{
