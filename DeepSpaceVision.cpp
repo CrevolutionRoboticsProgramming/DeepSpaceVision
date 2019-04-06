@@ -6,12 +6,11 @@
 #include <array>
 #include <unistd.h>
 #include <chrono>
+#include <X11/Xlib.h> // For XInitThreads()
 
 double distanceTo{0},
 	verticalAngleError{0},
 	horizontalAngleError{0};
-
-bool switchingCameras{false};
 
 cv::Scalar hsvLow{70, 160, 230},
 	hsvHigh{110, 200, 255};
@@ -24,11 +23,10 @@ int contourPolygonAccuracy{5};
 int minArea{60},
 	minRotation{30};
 
-int processingVideoSource{0},
-	viewingVideoSource{1};
+int camSrc{0};
 
-CvCapture_GStreamer processingCamera;
-CvCapture_GStreamer viewingCamera;
+CvCapture_GStreamer cam;
+cv::Mat frame;
 
 std::string udpHost{"10.28.51.2"};
 int udpSendPort{1182}, udpReceivePort{1183};
@@ -36,15 +34,17 @@ int udpSendPort{1182}, udpReceivePort{1183};
 int width{160}, height{120};
 int framerate{15};
 
-std::string videoHost{"10.28.51.175"};//"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//"192.168.137.1"};//
+std::string videoHost{"10.28.51.175"}; //"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//"192.168.137.1"};//
 int videoPort{1181};
+std::string outputFileDir{"/home/ryan"},
+	outputFileName{"pic.jpeg"};
 
-bool verbose{false};
-bool showImages{false};
+bool verbose{true};
+bool showImages{true};
 
 void setCameraNumbers()
 {
-	FILE * uname;
+	FILE *uname;
 	char consoleOutput[300];
 	int lastchar;
 
@@ -64,88 +64,9 @@ void setCameraNumbers()
 	 * 	- Parses the output character for an integer
 	 * 	- Assigns that integer to the appropriate variable
 	 */
-	viewingVideoSource = outputString.at(outputString.find("/dev/video", outputString.find("USB 2.0 Camera: HD USB Camera")) + 10) - '0';
-	processingVideoSource = outputString.at(outputString.find("/dev/video", outputString.find("UVC Camera (046d:081b)")) + 10) - '0';
+	camSrc = outputString.at(outputString.find("/dev/video", outputString.find("USB 2.0 Camera: HD USB Camera")) + 10) - '0';
 
 	pclose(uname);
-}
-
-void flashCameras(int processingVideoSource, int viewingVideoSource)
-{
-	char buffer[500];
-
-	//Flashes the processingCamera with optimal settings for identifying the targets
-	sprintf(buffer,
-			"v4l2-ctl -d /dev/video%d \
-		--set-ctrl brightness=100 \
-		--set-ctrl contrast=255 \
-		--set-ctrl saturation=100 \
-		--set-ctrl white_balance_temperature_auto=0 \
-		--set-ctrl white_balance_temperature=0 \
-		--set-ctrl sharpness=24 \
-		--set-ctrl gain=24 \
-		--set-ctrl exposure_auto=1 \
-		--set-ctrl exposure_absolute=120",
-			processingVideoSource);
-	system(buffer);
-
-	//Makes sure the viewingCamera is set to its optimal settings for actually seeing what's going on
-	sprintf(buffer,
-			"v4l2-ctl -d /dev/video%d \
-		--set-ctrl brightness=0 \
-		--set-ctrl contrast=32 \
-		--set-ctrl saturation=64 \
-		--set-ctrl white_balance_temperature_auto=1 \
-		--set-ctrl sharpness=24 \
-		--set-ctrl gain=24 \
-		--set-ctrl power_line_frequency=2 \
-		--set-ctrl exposure_auto=0",
-			viewingVideoSource);
-	system(buffer);
-}
-
-void openCameras()
-{
-	char buffer[500];
-
-	//Creates an array of characters (acts like a string) to hold the
-	//gstreamer pipeline
-	sprintf(buffer,
-			"v4l2src device=/dev/video%d ! "
-			"video/x-raw,format=(string)YUY2,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
-			"queue ! autovideoconvert ! appsink",
-			viewingVideoSource, width, height, framerate);
-
-
-	//Tells the viewingCamera to start reading from the pipeline to process video
-	viewingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
-
-	if (verbose)
-	{
-		std::cout << "*** Opened viewingCamera ***\n";
-	}
-
-	//Creates an array of characters (acts like a string) to hold the
-	//gstreamer pipeline
-	sprintf(buffer,
-			"v4l2src device=/dev/video%d ! "
-			"video/x-raw,format=(string)YUY2,width=(int)%d,height=(int)%d,framerate=(fraction)%d/1 ! "
-			"videoflip method=clockwise ! "
-			"queue ! autovideoconvert ! appsink",
-			processingVideoSource, width, height, framerate);
-
-	//Tells the processingCamera to start reading from the pipeline to process video
-	processingCamera.open(CV_CAP_GSTREAMER_FILE, buffer);
-
-	sprintf(buffer,
-			"v4l2-ctl -d /dev/video%d --set-ctrl gain=24",
-			processingVideoSource);
-	system(buffer);
-
-	if (verbose)
-	{
-		std::cout << "*** Opened processingCamera ***\n";
-	}
 }
 
 void transmitVideo()
@@ -159,18 +80,17 @@ void transmitVideo()
 
 	sprintf(buffer,
 			"appsrc ! "
-			"video/x-raw,format=(string)BGR,width=(int)%d,height=(int)%d,framerate=(fraction)15/1 ! "
+			"video/x-raw,format=BGR,width=%d,height=%d,framerate=15/1 ! "
 			//"autovideoconvert ! video/x-raw,format=H264 ! "
 			//"omxh264enc ! "
 			//"rtph264pay ! "
 			"videoconvert ! video/x-raw,format=I420 ! "
 			"jpegenc ! "
-			"multifilesink location=/home/pi/pic.jpeg max-files=1",
+			"multifilesink location=%s max-files=1",
 			//"rtpjpegpay ! "
 			//"udpsink host=%s port=%d sync=false async=false",
 			//videoHost.c_str(), videoPort
-			width, height
-			);
+			width, height, (outputFileDir + "/" + outputFileName).c_str());
 
 	CvVideoWriter_GStreamer videoWriter;
 	videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
@@ -180,47 +100,51 @@ void transmitVideo()
 		std::cout << "*** Opened video writer ***\n";
 	}
 
-	cv::Mat frame;
 	IplImage *img;
+	cv::Mat transmitFrame;
 	while (true)
 	{
-		if (!switchingCameras)
+		cam.grabFrame();
+
+		img = cam.retrieveFrame(0);
+		frame = cv::cvarrToMat(img);
+
+		if(frame.empty())
 		{
-			viewingCamera.grabFrame();
-
-			img = viewingCamera.retrieveFrame(0);
-			frame = cv::cvarrToMat(img);
-
-			if (frame.empty())
+			if(verbose)
 			{
-				if (verbose)
-				{
-					std::cout << "*** Could not open video transmitting frame; retrying... ***\n";
-				}
-				continue;
+				std::cout << "*** Frame is empty, retrying... ***\n";
 			}
+			continue;
+		}
 
-			cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 1.5);
+		frame.copyTo(transmitFrame);
 
-			cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 50, 7), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(255, 255, 255));
+		if (verbose)
+		{
+			std::cout << "*** Retrieved frame ***\n";
+		}
 
-			if (verbose)
-			{
-				std::cout << "*** Performed operations on viewingCamera feed ***\n";
-			}
+		cv::line(transmitFrame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 1.5);
 
-			IplImage outImage = (IplImage)frame;
-			videoWriter.writeFrame(&outImage);
+		cv::putText(transmitFrame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 50, 7), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(255, 255, 255));
 
-			if (showImages)
-			{
-				cv::imshow("Transmitted Image", frame);
-			}
+		if (verbose)
+		{
+			std::cout << "*** Performed operations on camera feed ***\n";
+		}
 
-			if (verbose)
-			{
-				std::cout << "*** Wrote frame to UDP stream ***\n";
-			}
+		IplImage outImage = (IplImage)transmitFrame;
+		videoWriter.writeFrame(&outImage);
+
+		if (showImages)
+		{
+			cv::imshow("Transmitted Image", transmitFrame);
+		}
+
+		if (verbose)
+		{
+			std::cout << "*** Wrote frame to UDP stream ***\n";
 		}
 	}
 }
@@ -228,13 +152,31 @@ void transmitVideo()
 void legitSendVideo()
 {
 	char buffer[500];
-	
+
 	sprintf(buffer,
 			"LD_LIBRARY_PATH=/usr/local/lib mjpg_streamer "
-			"-i \"input_file.so -f /home/pi -n pic.jpeg -d 0\" "
+			"-i \"input_file.so -f %s -n %s -d 0\" "
 			"-o \"output_http.so -w /tmp -p %d\"",
-			videoPort);
-			
+			outputFileDir.c_str(), outputFileName.c_str(), videoPort);
+
+	system(buffer);
+}
+
+void flashCamera()
+{
+	char buffer[500];
+	sprintf(buffer,
+			"v4l2-ctl -d /dev/video%d \
+		--set-ctrl brightness=100 \
+		--set-ctrl contrast=255 \
+		--set-ctrl saturation=100 \
+		--set-ctrl white_balance_temperature_auto=0 \
+		--set-ctrl white_balance_temperature=0 \
+		--set-ctrl sharpness=24 \
+		--set-ctrl gain=24 \
+		--set-ctrl exposure_auto=1 \
+		--set-ctrl exposure_absolute=120",
+			camSrc);
 	system(buffer);
 }
 
@@ -292,34 +234,52 @@ int main()
 
 	cv::Mat morphElement{cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(3, 3))};
 
+	XInitThreads();
+
+	system("ls /dev/video*");
+
 	setCameraNumbers();
-  
+
 	UDPHandler udpHandler{udpHost, udpSendPort, udpReceivePort};
 
-	// We flash the cameras with the incorrect settings first to more
-	// reliably flash them with the correct settings (idk why)
-	flashCameras(viewingVideoSource, processingVideoSource);
-	flashCameras(processingVideoSource, viewingVideoSource);
+	char buffer[500];
+	sprintf(buffer,
+			"gst-launch-1.0 v4l2src device=/dev/video%d ! "
+			"video/x-raw,format=YUY2,width=%d,height=%d,framerate=%d/1 ! "
+			"videoflip method=clockwise ! "
+			"queue ! autovideoconvert ! fakesink &",
+			camSrc, width, height, framerate);
+	system(buffer);
 
-	openCameras();
+	system("pkill gst-launch-1.0");
+
+	//Creates an array of characters (acts like a string) to hold the
+	//gstreamer pipeline
+	sprintf(buffer,
+			"v4l2src device=/dev/video%d ! "
+			"videoscale ! video/x-raw,width=%d,height=%d,framerate=30/1 ! "
+			"videorate ! video/x-raw,framerate=%d/1 ! "
+			"queue ! autovideoconvert ! appsink",
+			camSrc, width, height, framerate);
+	//Tells the cam to start reading from the pipeline to process video
+	cam.open(CV_CAP_GSTREAMER_FILE, buffer);
+
+	if (verbose)
+	{
+		std::cout << "--- Opened camera ---\n";
+	}
 
 	if (verbose)
 	{
 		std::cout << "--- Initialization complete ---\n";
 	}
 
-	if (verbose)
-	{
-		std::cout << "--- Opened processingCamera ---\n";
-	}
-
 	//Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
 	std::thread transmitVideoThread{transmitVideo};
 	std::thread legitSendVideoThread{legitSendVideo};
 
-	cv::Mat frame;
-	IplImage *img;
-	for (int frameCounter{0}; ; ++frameCounter)
+	cv::Mat processingFrame;
+	for (int frameCounter{0};; ++frameCounter)
 	{
 		//Allows us to see the frames we will display with cv::imshow (this slows the program down severely when enabled)
 		if (showImages)
@@ -329,27 +289,22 @@ int main()
 
 		if (frameCounter == 45)
 		{
-			flashCameras(processingVideoSource, viewingVideoSource);
+			flashCamera();
 		}
 
-		processingCamera.grabFrame();
-
-		img = processingCamera.retrieveFrame(0);
-		frame = cv::cvarrToMat(img);
-
-		if (frame.empty())
+		if(frame.empty())
 		{
-			std::cout << "Frame is empty\n";
-			exit(-1);
+			if(verbose)
+			{
+				std::cout << "--- Frame is empty, retrying... ---\n";
+			}
+			continue;
 		}
 
-		if (verbose)
-		{
-			std::cout << "--- Retrieved frame ---\n";
-		}
+		frame.copyTo(processingFrame);
 
 		std::vector<std::vector<cv::Point>> contoursRaw;
-		extractContours(contoursRaw, frame, hsvLow, hsvHigh, morphElement);
+		extractContours(contoursRaw, processingFrame, hsvLow, hsvHigh, morphElement);
 		std::vector<Contour> contours(contoursRaw.size());
 		for (int i{0}; i < contoursRaw.size(); ++i)
 		{
@@ -457,11 +412,11 @@ int main()
 		//The original contour will always be the left one since that's what we've specified
 		//Calculates and spits out some values for us
 		//distanceTo = (regression function);
-		horizontalAngleError = -((frame.cols / 2.0) - centerX) / frame.cols * horizontalFOV;
-		//verticalAngleError = ((frame.rows / 2.0) - centerY) / frame.rows * horizontalFOV;
-		
+		horizontalAngleError = -((processingFrame.cols / 2.0) - centerX) / processingFrame.cols * horizontalFOV;
+		//verticalAngleError = ((processingFrame.rows / 2.0) - centerY) / processingFrame.rows * horizontalFOV;
+
 		double height = closestPair.at(0).rotatedBoundingBox.size.width;
-		
+
 		/*
 		height(pixels) / vertical(total pixels) = 6.31(height of tape in inches) / height(of frame in inches)
 		height of frame(inches) = 6.31 * vertical(pixels) / height(pixels)
@@ -471,8 +426,8 @@ int main()
 		
 		distance = 0.5 * 6.31 * vertical(pixels) / height(pixels) / tan(vertical FOV / 2)
 		*/
-		double distance = 0.5 * 6.31 * frame.rows / height / std::tan(verticalFOV * 0.5 * 3.141592654 / 180);//1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
-		
+		double distance = 0.5 * 6.31 * processingFrame.rows / height / std::tan(verticalFOV * 0.5 * 3.141592654 / 180); //1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
+
 		// Conversion to radians (the std trigonometry functions only take radians)
 		horizontalAngleError *= 3.141592654 / 180;
 
@@ -482,9 +437,9 @@ int main()
 		horizontalAngleError *= 180 / 3.141592654;
 
 		udpHandler.send(std::to_string(horizontalAngleError));
-		
+
 		//std::cout << "Max - min y: " << closestPair.at(0).rotatedBoundingBoxPoints[3] -  closestPair.at(0).rotatedBoundingBoxPoints[1] << "\n\n";
-		
+
 		//std::cout << "Height (in pixels): " << height << '\n';
 		//std::cout << "Distance: " << distance << '\n';
 		//std::cout << "AOE: " << horizontalAngleError << "\n\n";
@@ -495,4 +450,3 @@ int main()
 		}
 	}
 }
-
