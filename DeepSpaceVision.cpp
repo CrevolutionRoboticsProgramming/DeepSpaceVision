@@ -38,11 +38,11 @@ int framerate{15};
 
 std::string videoHost{"10.28.51.175"}; //"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//"192.168.137.1"};//
 int videoPort{1181};
-std::string outputFileDir{"/home/pi"},
-	outputFileName{"pic.jpg"};
+std::string outputFileDir{"/home/ryan"},
+    outputFileName{"pic.jpg"};
 
 bool verbose{false};
-bool showImages{true};
+bool showImages{false};
 
 void setCameraNumbers()
 {
@@ -115,7 +115,7 @@ void openCameras()
     sprintf(buffer,
             "v4l2src device=/dev/video%d ! "
             "videoscale ! video/x-raw,width=%d,height=%d ! "
-			"videorate ! video/x-raw,framerate=%d/1 ! "
+            "videorate ! video/x-raw,framerate=%d/1 ! "
             "queue ! autovideoconvert ! appsink",
             viewingVideoSource, width, height, framerate);
 
@@ -152,90 +152,12 @@ void openCameras()
 
 void transmitVideo()
 {
-    if (verbose)
-    {
-        std::cout << "*** Transmitting video ***\n";
-    }
-
     char buffer[500];
-
-    sprintf(buffer,
-            "appsrc ! "
-            "video/x-raw,format=BGR,width=%d,height=%d,framerate=15/1 ! "
-            //"autovideoconvert ! video/x-raw,format=H264 ! "
-            //"omxh264enc ! "
-            //"rtph264pay ! "
-            "videoconvert ! video/x-raw,format=I420 ! "
-            "jpegenc ! "
-            "multifilesink location=%s max-files=1",
-            //"rtpjpegpay ! "
-            //"udpsink host=%s port=%d sync=false async=false",
-            //videoHost.c_str(), videoPort
-            width, height, (outputFileDir + "/" + outputFileName).c_str());
-
-    CvVideoWriter_GStreamer videoWriter;
-    videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
-
-    if (verbose)
-    {
-        std::cout << "*** Opened video writer ***\n";
-    }
-
-    cv::Mat frame;
-    IplImage *img;
-    while (true)
-    {
-        if (!processingVision)
-        {
-            viewingCamera.grabFrame();
-
-            img = viewingCamera.retrieveFrame(0);
-            frame = cv::cvarrToMat(img);
-
-            if (frame.empty())
-            {
-                if (verbose)
-                {
-                    std::cout << "*** Could not open video transmitting frame, retrying... ***\n";
-                }
-                continue;
-            }
-
-            cv::line(frame, cv::Point(frame.cols / 2, 0), cv::Point(frame.cols / 2, frame.rows), cv::Scalar(0, 0, 0), 1.5);
-
-            cv::putText(frame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(frame.cols - 50, 7), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(255, 255, 255));
-
-            if (verbose)
-            {
-                std::cout << "*** Performed operations on viewingCamera feed ***\n";
-            }
-
-            IplImage outImage = (IplImage)frame;
-            videoWriter.writeFrame(&outImage);
-
-            if (showImages)
-            {
-                cv::imshow("Transmitted Image", frame);
-            }
-
-            if (verbose)
-            {
-                std::cout << "*** Wrote frame to UDP stream ***\n";
-            }
-        }
-    }
-}
-
-void legitSendVideo()
-{
-    char buffer[500];
-
     sprintf(buffer,
             "LD_LIBRARY_PATH=/usr/local/lib mjpg_streamer "
             "-i \"input_file.so -f %s -n %s -d 0\" "
             "-o \"output_http.so -w /tmp -p %d\"",
             outputFileDir.c_str(), outputFileName.c_str(), videoPort);
-
     system(buffer);
 }
 
@@ -311,21 +233,74 @@ int main()
 
     //Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
     std::thread transmitVideoThread{transmitVideo};
-    std::thread legitSendVideoThread{legitSendVideo};
 
-    if (udpHandler.getMessage() == "GO")
+    char buffer[500];
+    sprintf(buffer,
+            "appsrc ! "
+            "video/x-raw,format=BGR,width=%d,height=%d,framerate=15/1 ! "
+            //"autovideoconvert ! video/x-raw,format=H264 ! "
+            //"omxh264enc ! "
+            //"rtph264pay ! "
+            "videoconvert ! video/x-raw,format=I420 ! "
+            "jpegenc ! "
+            "multifilesink location=%s max-files=1",
+            //"rtpjpegpay ! "
+            //"udpsink host=%s port=%d sync=false async=false",
+            //videoHost.c_str(), videoPort
+            width, height, (outputFileDir + "/" + outputFileName).c_str());
+
+    CvVideoWriter_GStreamer videoWriter;
+    videoWriter.open(buffer, 0, framerate, cv::Size(width, height), true);
+
+    if (verbose)
     {
-        processingVision = true;
-    }
-    else if (udpHandler.getMessage() == "NO")
-    {
-        processingVision = false;
+        std::cout << "*** Opened video writer ***\n";
     }
 
-    cv::Mat frame;
-    IplImage *img;
+    cv::Mat transmitFrame, processingFrame;
+    IplImage *transmitImg, *processingImg;
     for (int frameCounter{0};; ++frameCounter)
     {
+        if (udpHandler.getMessage() == "GO")
+        {
+            processingVision = true;
+        }
+        else if (udpHandler.getMessage() == "NO")
+        {
+            processingVision = false;
+        }
+
+        viewingCamera.grabFrame();
+
+        transmitImg = viewingCamera.retrieveFrame(0);
+        transmitFrame = cv::cvarrToMat(transmitImg);
+
+        if (transmitFrame.empty())
+        {
+            if (verbose)
+            {
+                std::cout << "*** Could not open video transmitting frame, retrying... ***\n";
+            }
+            continue;
+        }
+
+        cv::line(transmitFrame, cv::Point(transmitFrame.cols / 2, 0), cv::Point(transmitFrame.cols / 2, transmitFrame.rows), cv::Scalar(0, 0, 0), 1.5);
+
+        cv::putText(transmitFrame, "AoE: " + std::to_string(horizontalAngleError), cv::Point(transmitFrame.cols - 50, 7), cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(255, 255, 255));
+
+        if (verbose)
+        {
+            std::cout << "*** Performed operations on viewingCamera feed ***\n";
+        }
+
+        IplImage outImage = (IplImage)transmitFrame;
+        videoWriter.writeFrame(&outImage);
+
+        if (showImages)
+        {
+            cv::imshow("Transmitted Image", transmitFrame);
+        }
+
         if (!processingVision)
         {
             continue;
@@ -344,10 +319,10 @@ int main()
 
         processingCamera.grabFrame();
 
-        img = processingCamera.retrieveFrame(0);
-        frame = cv::cvarrToMat(img);
+        processingImg = processingCamera.retrieveFrame(0);
+        processingFrame = cv::cvarrToMat(processingImg);
 
-        if (frame.empty())
+        if (processingFrame.empty())
         {
             std::cout << "Frame is empty\n";
             exit(-1);
@@ -359,7 +334,7 @@ int main()
         }
 
         std::vector<std::vector<cv::Point>> contoursRaw;
-        extractContours(contoursRaw, frame, hsvLow, hsvHigh, morphElement);
+        extractContours(contoursRaw, processingFrame, hsvLow, hsvHigh, morphElement);
         std::vector<Contour> contours(contoursRaw.size());
         for (int i{0}; i < contoursRaw.size(); ++i)
         {
@@ -467,8 +442,8 @@ int main()
         //The original contour will always be the left one since that's what we've specified
         //Calculates and spits out some values for us
         //distanceTo = (regression function);
-        horizontalAngleError = -((frame.cols / 2.0) - centerX) / frame.cols * horizontalFOV;
-        //verticalAngleError = ((frame.rows / 2.0) - centerY) / frame.rows * horizontalFOV;
+        horizontalAngleError = -((processingFrame.cols / 2.0) - centerX) / processingFrame.cols * horizontalFOV;
+        //verticalAngleError = ((processingFrame.rows / 2.0) - centerY) / processingFrame.rows * horizontalFOV;
 
         double height = closestPair.at(0).rotatedBoundingBox.size.width;
 
@@ -481,7 +456,7 @@ int main()
 		
 		distance = 0.5 * 6.31 * vertical(pixels) / height(pixels) / tan(vertical FOV / 2)
 		*/
-        double distance = 0.5 * 6.31 * frame.rows / height / std::tan(verticalFOV * 0.5 * 3.141592654 / 180); //1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
+        double distance = 0.5 * 6.31 * processingFrame.rows / height / std::tan(verticalFOV * 0.5 * 3.141592654 / 180); //1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
 
         // Conversion to radians (the std trigonometry functions only take radians)
         horizontalAngleError *= 3.141592654 / 180;
@@ -505,3 +480,4 @@ int main()
         }
     }
 }
+
