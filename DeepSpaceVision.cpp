@@ -38,7 +38,7 @@ int framerate{15};
 
 std::string videoHost{"10.28.51.175"}; //"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//"192.168.137.1"};//
 int videoPort{1181};
-std::string outputFileDir{"/home/ryan"},
+std::string outputFileDir{"/home/pi"},
     outputFileName{"pic.jpg"};
 
 bool verbose{false};
