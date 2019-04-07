@@ -11,16 +11,15 @@ double distanceTo{0},
     verticalAngleError{0},
     horizontalAngleError{0};
 
-cv::Scalar hsvLow{70, 160, 230},
-    hsvHigh{110, 200, 255};
+cv::Scalar hsvLow{65, 200, 125},//{70, 160, 230},
+    hsvHigh{85, 255, 255};//{110, 200, 255};
 
-double horizontalFOV{30},
-    verticalFOV{60}; //20.93}; //The one we have now is for the smaller one //41.86};
+double horizontalFOV{180},
+    verticalFOV{101.25}; //20.93}; //The one we have now is for the smaller one //41.86};
 
 int contourPolygonAccuracy{5};
 
-int minArea{60},
-    minRotation{30};
+int minRotation{30};
 
 int camSrc{0};
 
@@ -36,10 +35,11 @@ int framerate{15};
 std::string videoHost{"10.28.51.175"}; //"10.0.0.178"};////"10.28.51.201"};//" "10.28.51.210"};//"192.168.137.1"};//
 int videoPort{1181};
 std::string outputFileDir{"/home/pi"},
-    outputFileName{"pic.jpeg"};
+    outputFileName{"pic.jpg"};
 
 bool verbose{false};
-bool showImages{false};
+bool showImages{true};
+bool processingVision{true};
 
 void setCameraNumber()
 {
@@ -122,8 +122,8 @@ void extractContours(std::vector<std::vector<cv::Point>> &contours, cv::Mat fram
     //cv::imshow(name + "'s Morph", frame);
 
     //Shaves down the bright parts of the image and then expands them to remove small false positives
-    cv::erode(frame, frame, morphElement, cv::Point(-1, -1), 2);
-    cv::dilate(frame, frame, morphElement, cv::Point(-1, -1), 2);
+    cv::erode(frame, frame, morphElement, cv::Point(-1, -1), 1);//2);
+    cv::dilate(frame, frame, morphElement, cv::Point(-1, -1), 1);//2);
 
     if (showImages)
     {
@@ -213,14 +213,23 @@ int main()
         std::cout << "--- Initialization complete ---\n";
     }
 
-    //Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
+    // Creates a new thread in which we create a gstreamer pipeline that transmits video to the Driver Station
     std::thread transmitVideoThread{transmitVideo};
 
+    // These hold the distortions as calculated by a camera calibration tool
+    CvMat *intrinsic = (CvMat*)cvLoad("Intrinsics.xml");
+	CvMat *distortion = (CvMat*)cvLoad("Distortion.xml");
+
+    // These hold the transformations required to normalize the fisheye video for processing
+    IplImage* mapx = cvCreateImage( cvSize(width, height), IPL_DEPTH_32F, 1 );
+	IplImage* mapy = cvCreateImage( cvSize(width, height), IPL_DEPTH_32F, 1 );
+	cvInitUndistortMap(intrinsic,distortion,mapx,mapy);
+
     IplImage *img;
-    cv::Mat processingFrame, transmitFrame;
+    cv::Mat transmitFrame;
     for (int frameCounter{0};; ++frameCounter)
     {
-        //Allows us to see the frames we will display with cv::imshow (this slows the program down severely when enabled)
+        // Allows us to see the frames we will display with cv::imshow (this slows the program down severely when enabled)
         if (showImages)
         {
             cv::waitKey(1);
@@ -278,10 +287,17 @@ int main()
             std::cout << "*** Transmitted frame ***\n";
         }
 
-        frame.copyTo(processingFrame);
+        if(!processingVision)
+        {
+            continue;
+        }
+
+        cvRemap( img, img, mapx, mapy );
+
+        frame = cv::cvarrToMat(img);
 
         std::vector<std::vector<cv::Point>> contoursRaw;
-        extractContours(contoursRaw, processingFrame, hsvLow, hsvHigh, morphElement);
+        extractContours(contoursRaw, frame, hsvLow, hsvHigh, morphElement);
         std::vector<Contour> contours(contoursRaw.size());
         for (int i{0}; i < contoursRaw.size(); ++i)
         {
@@ -296,7 +312,7 @@ int main()
         //Filters out bad contours and adds the contour to the vector
         for (int c{0}; c < contours.size(); ++c)
         {
-            if (!contours.at(c).isValid(minArea, minRotation, 3))
+            if (!contours.at(c).isValid(minRotation, 3))
             {
                 contours.erase(contours.begin() + contours.size() - 1);
                 --c;
@@ -389,8 +405,8 @@ int main()
         //The original contour will always be the left one since that's what we've specified
         //Calculates and spits out some values for us
         //distanceTo = (regression function);
-        horizontalAngleError = -((processingFrame.cols / 2.0) - centerX) / processingFrame.cols * horizontalFOV;
-        //verticalAngleError = ((processingFrame.rows / 2.0) - centerY) / processingFrame.rows * horizontalFOV;
+        horizontalAngleError = -((frame.cols / 2.0) - centerX) / frame.cols * horizontalFOV;
+        //verticalAngleError = ((frame.rows / 2.0) - centerY) / frame.rows * horizontalFOV;
 
         double height = closestPair.at(0).rotatedBoundingBox.size.width;
 
@@ -403,7 +419,7 @@ int main()
 		
 		distance = 0.5 * 6.31 * vertical(pixels) / height(pixels) / tan(vertical FOV / 2)
 		*/
-        double distance = 0.5 * 6.31 * processingFrame.rows / height / std::tan(verticalFOV * 0.5 * 3.141592654 / 180); //1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
+        double distance = 0.5 * 6.31 * frame.rows / height / std::tan(verticalFOV * 0.5 * 3.141592654 / 180); //1751.45 / height; //.1945 * height * height + -7.75 * height + 122.4;
 
         // Conversion to radians (the std trigonometry functions only take radians)
         horizontalAngleError *= 3.141592654 / 180;
